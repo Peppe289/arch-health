@@ -97,21 +97,30 @@ fn open_handle(conf: &PacmanConf, db_path: &Path) -> PortResult<Alpm> {
 
 fn build_snapshot(sync: bool) -> PortResult<Arc<PackageSnapshot>> {
     let conf = PacmanConf::load_default()?;
-    let (handle, freshness) = if sync {
-        let dir = prepare_private_dbpath(&conf).map_err(|e| {
-            PortError::unavailable(format!("preparing the private database copy: {e}"))
-        })?;
-        let mut handle = open_handle(&conf, &dir)?;
-        let freshness = match handle.syncdbs_mut().update(false) {
-            Ok(_) => DbFreshness::Synced,
-            Err(e) => DbFreshness::SyncFailed(e.to_string()),
-        };
-        (handle, freshness)
+    let private_dir = if sync {
+        Some(prepare_private_dbpath(&conf))
     } else {
-        (
+        None
+    };
+    let (handle, freshness) = match private_dir {
+        Some(Ok(dir)) => {
+            let mut handle = open_handle(&conf, &dir)?;
+            let freshness = match handle.syncdbs_mut().update(false) {
+                Ok(_) => DbFreshness::Synced,
+                Err(e) => DbFreshness::SyncFailed(e.to_string()),
+            };
+            (handle, freshness)
+        }
+        // Without a private copy the system databases still answer every
+        // package question; only freshness is lost.
+        Some(Err(e)) => (
+            open_handle(&conf, &conf.db_path)?,
+            DbFreshness::SyncFailed(format!("preparing the private database copy: {e}")),
+        ),
+        None => (
             open_handle(&conf, &conf.db_path)?,
             DbFreshness::SystemDatabases,
-        )
+        ),
     };
 
     let syncdbs = handle.syncdbs();

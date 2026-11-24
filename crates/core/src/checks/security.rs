@@ -129,7 +129,9 @@ impl Check for Vulnerabilities {
         let mut items: Vec<(Severity, bool, Item)> = findings
             .into_iter()
             .map(|(name, mut f)| {
-                f.cves.dedup();
+                // CVEs come from several advisories: drop repeats, keep order.
+                let mut seen = std::collections::HashSet::new();
+                f.cves.retain(|c| seen.insert(c.clone()));
                 let more = f.cves.len().saturating_sub(MAX_CVES_SHOWN);
                 let mut ids = f
                     .cves
@@ -189,6 +191,29 @@ mod tests {
             fixed: fixed.map(Into::into),
             issues: vec![format!("CVE-{name}")],
         }
+    }
+
+    #[test]
+    fn repeated_cves_across_advisories_are_listed_once() {
+        let mut fake = Fake::default();
+        fake.snapshot.packages = vec![pkg("openssl", "3.1-1")];
+        let mut a = avg("1", "openssl", "Fixed", "High", Some("3.2-1"));
+        a.issues = vec!["CVE-A".into(), "CVE-B".into()];
+        let mut b = avg("2", "openssl", "Fixed", "High", Some("3.2-1"));
+        b.issues = vec!["CVE-C".into(), "CVE-A".into()];
+        fake.advisories = vec![a, b];
+        let (ports, config) = (fake.ports(), Default::default());
+        let r = Vulnerabilities
+            .run(&Context {
+                ports: &ports,
+                config: &config,
+            })
+            .unwrap();
+        assert!(
+            r.items[0].detail.ends_with("CVE-A, CVE-B, CVE-C)"),
+            "{}",
+            r.items[0].detail
+        );
     }
 
     #[test]

@@ -11,17 +11,6 @@ pub struct Renderer {
     verbose: bool,
 }
 
-fn icon(s: Status) -> &'static str {
-    match s {
-        Status::Ok => "✔",
-        Status::Skipped => "-",
-        Status::Info => "ℹ",
-        Status::Warning => "⚠",
-        Status::Unknown => "?",
-        Status::Critical => "✘",
-    }
-}
-
 fn color(s: Status) -> &'static str {
     match s {
         Status::Ok => "\x1b[32m",
@@ -57,7 +46,7 @@ impl Renderer {
     pub fn report(&self, r: &CheckReport) {
         println!(
             " {} {:<20} {}",
-            self.paint(color(r.status), icon(r.status)),
+            self.paint(color(r.status), r.status.symbol()),
             r.id.title(),
             r.summary
         );
@@ -67,7 +56,7 @@ impl Renderer {
         let limit = if self.verbose { usize::MAX } else { MAX_ITEMS };
         for i in r.items.iter().take(limit) {
             let mark = if i.status > Status::Info {
-                self.paint(color(i.status), icon(i.status))
+                self.paint(color(i.status), i.status.symbol())
             } else {
                 " ".into()
             };
@@ -85,14 +74,10 @@ impl Renderer {
     }
 
     pub fn footer(&self, overall: Status, limited: bool) {
-        let msg = match overall {
-            Status::Ok | Status::Skipped | Status::Info => "System is healthy",
-            Status::Warning | Status::Unknown => "There are warnings to look at",
-            Status::Critical => "There are critical problems",
-        };
+        let msg = overall.headline();
         println!(
             "\n{} {}",
-            self.paint(color(overall), icon(overall)),
+            self.paint(color(overall), overall.symbol()),
             self.paint(BOLD, msg)
         );
         if limited {

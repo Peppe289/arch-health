@@ -19,12 +19,9 @@ pub struct Ui {
     pub status_bar: gtk::Label,
     pub overview: gtk::Box,
     pub categories: HashMap<Category, gtk::Box>,
-    pub sidebar_glyphs: HashMap<String, gtk::Label>,
+    /// Status glyph in the sidebar, by page name.
+    pub sidebar_glyphs: HashMap<&'static str, gtk::Label>,
     pub sidebar: gtk::ListBox,
-}
-
-fn page_key(c: Category) -> String {
-    format!("{c:?}").to_lowercase()
 }
 
 fn sidebar_row(title: &str, glyph: Option<&gtk::Label>) -> gtk::ListBoxRow {
@@ -73,47 +70,51 @@ pub fn build(app: &gtk::Application) -> Ui {
     let sidebar = gtk::ListBox::builder()
         .selection_mode(gtk::SelectionMode::Browse)
         .build();
-    let mut page_names: Vec<String> = Vec::new();
     let mut sidebar_glyphs = HashMap::new();
-
-    // Overview
-    let (scrolled, overview) = pages::scrolled_page();
-    stack.add_named(&scrolled, Some(OVERVIEW));
-    let g = style::glyph(Status::Skipped);
-    sidebar.append(&sidebar_row("Overview", Some(&g)));
-    sidebar_glyphs.insert(OVERVIEW.to_string(), g);
-    page_names.push(OVERVIEW.into());
-
-    // One page per category
     let mut categories = HashMap::new();
-    for c in Category::ALL {
-        let (scrolled, content) = pages::scrolled_page();
-        let key = page_key(c);
-        stack.add_named(&scrolled, Some(&key));
-        let g = style::glyph(Status::Skipped);
-        sidebar.append(&sidebar_row(c.title(), Some(&g)));
-        sidebar_glyphs.insert(key.clone(), g);
-        categories.insert(c, content);
-        page_names.push(key);
-    }
+    let mut overview = None;
 
-    // Static page, after a separator
-    let sep = gtk::ListBoxRow::builder()
-        .child(&gtk::Separator::new(gtk::Orientation::Horizontal))
-        .selectable(false)
-        .activatable(false)
-        .build();
-    sidebar.append(&sep);
-    page_names.push(String::new());
-    stack.add_named(&pages::command_line_page(), Some(COMMAND_LINE));
-    sidebar.append(&sidebar_row("Command line", None));
-    page_names.push(COMMAND_LINE.into());
+    // Rows follow `pages()`, so a row index is a page index.
+    for page in pages() {
+        let (name, title, widget, glyph) = match page {
+            Page::Overview => {
+                let (scrolled, content) = pages::scrolled_page();
+                overview = Some(content);
+                (OVERVIEW, "Overview", scrolled.upcast(), true)
+            }
+            Page::Category(c) => {
+                let (scrolled, content) = pages::scrolled_page();
+                categories.insert(c, content);
+                (c.key(), c.title(), scrolled.upcast(), true)
+            }
+            Page::Separator => {
+                sidebar.append(
+                    &gtk::ListBoxRow::builder()
+                        .child(&gtk::Separator::new(gtk::Orientation::Horizontal))
+                        .selectable(false)
+                        .activatable(false)
+                        .build(),
+                );
+                continue;
+            }
+            Page::CommandLine => (
+                COMMAND_LINE,
+                "Command line",
+                pages::command_line_page(),
+                false,
+            ),
+        };
+        stack.add_named(&widget, Some(name));
+        let g = glyph.then(|| style::glyph(Status::Skipped));
+        sidebar.append(&sidebar_row(title, g.as_ref()));
+        if let Some(g) = g {
+            sidebar_glyphs.insert(name, g);
+        }
+    }
 
     let stack_for_sidebar = stack.clone();
     sidebar.connect_row_selected(move |_, row| {
-        if let Some(name) = row.and_then(|r| page_names.get(r.index() as usize))
-            && !name.is_empty()
-        {
+        if let Some(name) = row.and_then(|r| pages().get(r.index() as usize)?.name()) {
             stack_for_sidebar.set_visible_child_name(name);
         }
     });
@@ -153,42 +154,56 @@ pub fn build(app: &gtk::Application) -> Ui {
         run_button,
         spinner,
         status_bar,
-        overview,
+        overview: overview.expect("pages() starts with the overview"),
         categories,
         sidebar_glyphs,
         sidebar,
     }
 }
 
-/// Page names in sidebar order (an empty name is the separator row).
-pub fn page_names() -> Vec<String> {
-    let mut v = vec![OVERVIEW.to_string()];
-    v.extend(Category::ALL.iter().map(|c| page_key(*c)));
-    v.extend([String::new(), COMMAND_LINE.into()]);
-    v
+/// Entries of the sidebar, in order: the single source of truth for page
+/// names and row indexes.
+#[derive(Clone, Copy)]
+enum Page {
+    Overview,
+    Category(Category),
+    Separator,
+    CommandLine,
 }
 
-/// Shows the page called `name`; false if there is no such page.
-pub fn select_page(sidebar: &gtk::ListBox, name: &str) -> bool {
-    match page_names().iter().position(|n| !n.is_empty() && n == name) {
-        Some(i) => {
-            sidebar.select_row(sidebar.row_at_index(i as i32).as_ref());
-            true
+impl Page {
+    fn name(self) -> Option<&'static str> {
+        match self {
+            Page::Overview => Some(OVERVIEW),
+            Page::Category(c) => Some(c.key()),
+            Page::Separator => None,
+            Page::CommandLine => Some(COMMAND_LINE),
         }
-        None => false,
     }
 }
 
-/// Shows the page of `c` (sidebar row 0 is the overview).
-pub fn select_category(sidebar: &gtk::ListBox, c: Category) {
-    if let Some(i) = Category::ALL.iter().position(|x| *x == c) {
-        sidebar.select_row(sidebar.row_at_index(i as i32 + 1).as_ref());
+fn pages() -> Vec<Page> {
+    let mut v = vec![Page::Overview];
+    v.extend(Category::ALL.map(Page::Category));
+    v.extend([Page::Separator, Page::CommandLine]);
+    v
+}
+
+/// Names accepted by `--page`.
+pub fn page_names() -> Vec<&'static str> {
+    pages().into_iter().filter_map(Page::name).collect()
+}
+
+/// Shows the page called `name`, if it exists.
+pub fn select_page(sidebar: &gtk::ListBox, name: &str) {
+    if let Some(i) = pages().iter().position(|p| p.name() == Some(name)) {
+        sidebar.select_row(sidebar.row_at_index(i as i32).as_ref());
     }
 }
 
 impl Ui {
     pub fn set_category_glyph(&self, c: Category, s: Status) {
-        if let Some(g) = self.sidebar_glyphs.get(&page_key(c)) {
+        if let Some(g) = self.sidebar_glyphs.get(c.key()) {
             style::set_glyph(g, s);
         }
     }

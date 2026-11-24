@@ -30,13 +30,18 @@ fn boot_id() -> PortResult<String> {
 }
 
 /// Which program an entry belongs to, for grouping.
+/// In the user session `_SYSTEMD_UNIT` is always `user@UID.service`, so the
+/// user unit (or the program name) is the meaningful source there.
 fn source(r: &JournalRecord) -> String {
-    for key in [
-        "_SYSTEMD_UNIT",
-        "_SYSTEMD_USER_UNIT",
-        "SYSLOG_IDENTIFIER",
-        "_COMM",
-    ] {
+    if let Some(u) = r.get("_SYSTEMD_USER_UNIT") {
+        return u.clone();
+    }
+    if let Some(u) = r.get("_SYSTEMD_UNIT")
+        && !u.starts_with("user@")
+    {
+        return u.clone();
+    }
+    for key in ["SYSLOG_IDENTIFIER", "_COMM"] {
         if let Some(v) = r.get(key) {
             return v.clone();
         }
@@ -60,8 +65,11 @@ impl JournalReader for SdJournal {
         j.seek_head().map_err(&err)?;
         let mut out = Vec::new();
         while let Some(r) = j.next_entry().map_err(&err)? {
+            // An entry without a timestamp cannot be placed in time; dating it
+            // 1970 would distort every timeline.
+            let Ok(time) = j.timestamp() else { continue };
             out.push(LogEntry {
-                time: j.timestamp().unwrap_or(UNIX_EPOCH),
+                time,
                 source: source(&r),
                 priority: r.get("PRIORITY").and_then(|p| p.parse().ok()).unwrap_or(3),
                 message: r.get("MESSAGE").cloned().unwrap_or_default(),
@@ -109,5 +117,38 @@ impl JournalReader for SdJournal {
         ["/var/log/journal", "/run/log/journal"]
             .iter()
             .any(|base| fs::File::open(format!("{base}/{}/system.journal", id.trim())).is_ok())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn record(fields: &[(&str, &str)]) -> JournalRecord {
+        fields
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn source_prefers_meaningful_names() {
+        let user_app = record(&[
+            ("_SYSTEMD_UNIT", "user@1000.service"),
+            ("_SYSTEMD_USER_UNIT", "plasma-plasmashell.service"),
+            ("_COMM", "plasmashell"),
+        ]);
+        assert_eq!(source(&user_app), "plasma-plasmashell.service");
+
+        let session_process = record(&[("_SYSTEMD_UNIT", "user@1000.service"), ("_COMM", "steam")]);
+        assert_eq!(source(&session_process), "steam");
+
+        let service = record(&[
+            ("_SYSTEMD_UNIT", "bluetooth.service"),
+            ("_COMM", "bluetoothd"),
+        ]);
+        assert_eq!(source(&service), "bluetooth.service");
+
+        assert_eq!(source(&record(&[("_TRANSPORT", "kernel")])), "kernel");
     }
 }

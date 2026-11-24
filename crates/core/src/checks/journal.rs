@@ -25,12 +25,14 @@ fn truncate(s: &str, max: usize) -> String {
     }
 }
 
-/// emerg/alert/crit → critical; err → warning (for display of single events).
+/// emerg/alert/crit are real trouble → critical. Plain err messages are
+/// common noise on desktops → informational, so they never degrade the
+/// overall status nor appear among the problems.
 fn priority_status(priority: u8) -> Status {
     if priority <= 2 {
         Status::Critical
     } else {
-        Status::Warning
+        Status::Info
     }
 }
 
@@ -67,17 +69,14 @@ impl Check for JournalErrors {
         let mut groups: Vec<_> = groups.into_iter().collect();
         groups.sort_by(|a, b| a.1.worst.cmp(&b.1.worst).then(b.1.count.cmp(&a.1.count)));
 
-        // emerg/alert/crit are real trouble; plain errors are common noise on
-        // desktops, so they inform without degrading the overall status.
         let items: Vec<Item> = groups
             .iter()
             .map(|(src, g)| {
-                let status = if g.worst <= 2 {
-                    Status::Critical
-                } else {
-                    Status::Info
-                };
-                Item::new(status, *src, format!("×{}: {}", g.count, g.last))
+                Item::new(
+                    priority_status(g.worst),
+                    *src,
+                    format!("×{}: {}", g.count, g.last),
+                )
             })
             .collect();
         let summary = if entries.is_empty() {

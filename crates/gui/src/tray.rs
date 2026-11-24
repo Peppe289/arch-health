@@ -73,7 +73,7 @@ impl ksni::Tray for HealthTray {
             self.summary.clone()
         };
         ToolTip {
-            title: format!("arch-health: {}", style::headline(self.status)),
+            title: format!("arch-health: {}", self.status.headline()),
             description,
             ..Default::default()
         }

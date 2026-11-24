@@ -13,11 +13,11 @@ mod timeline;
 mod tray;
 mod window;
 
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::rc::Rc;
 
-use gtk::glib;
 use gtk::prelude::*;
+use gtk::{gio, glib};
 
 const APP_ID: &str = "io.github.archhealth.ArchHealth";
 
@@ -32,50 +32,53 @@ Options:
                   services, storage, logs, command-line
   -h, --help      print this help";
 
+#[derive(Debug, PartialEq, Eq)]
 struct Args {
     background: bool,
     page: Option<String>,
 }
 
-fn parse_args() -> Result<Args, String> {
-    let mut args = Args {
+/// Parses our options (without the program name).
+fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
+    let mut parsed = Args {
         background: false,
         page: None,
     };
-    let mut it = std::env::args().skip(1);
+    let mut it = args.into_iter();
     while let Some(a) = it.next() {
         match a.as_str() {
-            "--background" => args.background = true,
+            "--background" => parsed.background = true,
             "--page" => {
                 let page = it.next().ok_or("--page needs a value")?;
-                if !window::page_names()
-                    .iter()
-                    .any(|n| !n.is_empty() && *n == page)
-                {
+                if !window::page_names().contains(&page.as_str()) {
                     return Err(format!("unknown page `{page}`"));
                 }
-                args.page = Some(page);
+                parsed.page = Some(page);
             }
             other => return Err(format!("unknown option `{other}`")),
         }
     }
-    Ok(args)
+    Ok(parsed)
 }
 
 fn main() -> glib::ExitCode {
-    if std::env::args().any(|a| a == "-h" || a == "--help") {
+    let argv: Vec<String> = std::env::args().collect();
+    if argv.iter().any(|a| a == "-h" || a == "--help") {
         println!("{USAGE}");
         return glib::ExitCode::SUCCESS;
     }
-    let Args { background, page } = match parse_args() {
-        Ok(a) => a,
-        Err(e) => {
-            eprintln!("arch-health-gui: {e}\n\n{USAGE}");
-            return glib::ExitCode::FAILURE;
-        }
-    };
+    // Validate here, so errors are printed in the terminal that ran us.
+    if let Err(e) = parse_args(argv.iter().skip(1).cloned()) {
+        eprintln!("arch-health-gui: {e}\n\n{USAGE}");
+        return glib::ExitCode::FAILURE;
+    }
 
-    let gtk_app = gtk::Application::builder().application_id(APP_ID).build();
+    // With HANDLES_COMMAND_LINE the arguments of a second launch are
+    // forwarded to the running instance and handled by `command-line`.
+    let gtk_app = gtk::Application::builder()
+        .application_id(APP_ID)
+        .flags(gio::ApplicationFlags::HANDLES_COMMAND_LINE)
+        .build();
     let state: Rc<RefCell<Option<Rc<app::App>>>> = Rc::default();
 
     // `startup` runs once, in the primary instance only.
@@ -84,20 +87,49 @@ fn main() -> glib::ExitCode {
         *s.borrow_mut() = Some(app::App::new(a));
     });
 
-    // `activate` runs on every launch, including from a second instance.
-    let first = Cell::new(true);
-    gtk_app.connect_activate(move |_| {
-        if first.replace(false) && background {
-            return;
-        }
-        if let Some(a) = state.borrow().as_ref() {
+    // Runs in the primary instance for every launch, local or remote.
+    gtk_app.connect_command_line(move |_, cmdline| {
+        let args: Vec<String> = cmdline
+            .arguments()
+            .iter()
+            .skip(1)
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        let Ok(Args { background, page }) = parse_args(args) else {
+            return glib::ExitCode::FAILURE;
+        };
+        // --background: stay in the tray (first launch) or do nothing.
+        if !background && let Some(a) = state.borrow().as_ref() {
             if let Some(p) = &page {
                 a.show_page(p);
             }
             a.present();
         }
+        glib::ExitCode::SUCCESS
     });
 
-    // Our options are handled above; GTK gets none.
-    gtk_app.run_with_args::<&str>(&[])
+    gtk_app.run_with_args(&argv)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(args: &[&str]) -> Result<Args, String> {
+        parse_args(args.iter().map(|s| s.to_string()))
+    }
+
+    #[test]
+    fn parses_options() {
+        assert_eq!(
+            parse(&["--background", "--page", "logs"]),
+            Ok(Args {
+                background: true,
+                page: Some("logs".into())
+            })
+        );
+        assert!(parse(&["--page"]).is_err());
+        assert!(parse(&["--page", "nope"]).is_err());
+        assert!(parse(&["--wat"]).is_err());
+    }
 }

@@ -135,12 +135,14 @@ impl SystemInfo for LinuxSystem {
             .into_owned()
     }
 
+    /// Only directories with a kernel image: after an upgrade, leftovers
+    /// (e.g. DKMS modules) may keep the old directory without `vmlinuz`.
     fn installed_kernels(&self) -> Vec<String> {
         let mut out: Vec<String> = fs::read_dir("/usr/lib/modules")
             .into_iter()
             .flatten()
             .flatten()
-            .filter(|e| e.path().is_dir())
+            .filter(|e| e.path().join("vmlinuz").is_file())
             .map(|e| e.file_name().to_string_lossy().into_owned())
             .collect();
         out.sort();

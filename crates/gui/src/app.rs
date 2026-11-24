@@ -63,7 +63,7 @@ impl App {
         });
 
         let sidebar_ui = ui.sidebar.clone();
-        let navigate: pages::Navigate = Rc::new(move |c| window::select_category(&sidebar_ui, c));
+        let navigate: pages::Navigate = Rc::new(move |c| window::select_page(&sidebar_ui, c.key()));
 
         let app = Rc::new(Self {
             gtk_app: gtk_app.clone(),
@@ -197,7 +197,7 @@ impl App {
         let overall = report.overall();
         self.ui.status_bar.set_text(&format!(
             "Last check at {now} · {} · next in {} h",
-            style::headline(overall),
+            overall.headline(),
             CHECK_INTERVAL_SECS / 3600
         ));
 
@@ -207,12 +207,7 @@ impl App {
             if let Some(container) = self.ui.categories.get(&c) {
                 pages::fill_category(container, &report, c);
             }
-            let worst = report
-                .by_category(c)
-                .map(|r| r.status)
-                .max()
-                .unwrap_or(Status::Ok);
-            self.ui.set_category_glyph(c, worst);
+            self.ui.set_category_glyph(c, report.category_status(c));
         }
 
         let summary = problems_summary(&report, usize::MAX);
@@ -229,14 +224,15 @@ impl App {
         self.maybe_notify(&report);
     }
 
-    /// Notify only when the status gets worse. On the first run there is no
-    /// previous status: notify critical only.
+    /// Notify only when the status gets worse, by severity level (ok,
+    /// warning, critical): a check that could not run (Unknown, e.g. no
+    /// network) is not a worse system. First run: critical only.
     fn maybe_notify(&self, report: &Report) {
         let overall = report.overall();
         let previous = self.last_overall.replace(Some(overall));
         let worse = match previous {
             None => overall == Status::Critical,
-            Some(p) => overall > p && overall >= Status::Warning,
+            Some(p) => overall.exit_code() > p.exit_code(),
         };
         if !worse {
             return;
@@ -246,7 +242,7 @@ impl App {
         } else {
             "dialog-warning"
         };
-        let title = style::headline(overall).to_string();
+        let title = overall.headline().to_string();
         let body = problems_summary(report, NOTIFY_MAX_LINES);
         std::thread::spawn(move || {
             if let Err(e) = notify::send(icon, &title, &body) {

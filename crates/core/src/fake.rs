@@ -12,6 +12,7 @@ use crate::ports::*;
 pub struct Fake {
     pub snapshot: PackageSnapshot,
     pub last_upgrade: Option<DateTime<FixedOffset>>,
+    pub pacman_log_readable: bool,
     pub aur: Vec<AurPackage>,
     pub advisories: Vec<Advisory>,
     pub news: Vec<NewsItem>,
@@ -37,6 +38,7 @@ impl Default for Fake {
                 pacnew_files: vec![],
             },
             last_upgrade: None,
+            pacman_log_readable: true,
             aur: vec![],
             advisories: vec![],
             news: vec![],
@@ -113,6 +115,9 @@ impl PackageDb for Fake {
         Ok(Arc::new(self.snapshot.clone()))
     }
     fn last_full_upgrade(&self) -> PortResult<Option<DateTime<FixedOffset>>> {
+        if !self.pacman_log_readable {
+            return Err(crate::PortError::unavailable("pacman.log not readable"));
+        }
         Ok(self.last_upgrade)
     }
     fn compare_versions(&self, a: &str, b: &str) -> Ordering {

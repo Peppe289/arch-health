@@ -27,6 +27,38 @@ impl Status {
             Status::Critical => 2,
         }
     }
+
+    /// Symbol shared by all frontends.
+    pub fn symbol(self) -> &'static str {
+        match self {
+            Status::Ok => "✔",
+            Status::Skipped => "–",
+            Status::Info => "ℹ",
+            Status::Warning => "⚠",
+            Status::Unknown => "?",
+            Status::Critical => "✘",
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Status::Ok => "OK",
+            Status::Skipped => "Skipped",
+            Status::Info => "Info",
+            Status::Warning => "Warning",
+            Status::Unknown => "Unknown",
+            Status::Critical => "Critical",
+        }
+    }
+
+    /// One sentence describing this status as the overall result of a run.
+    pub fn headline(self) -> &'static str {
+        match self.exit_code() {
+            0 => "System is healthy",
+            1 => "There are warnings to look at",
+            _ => "There are critical problems",
+        }
+    }
 }
 
 /// Group shown together in frontends.
@@ -49,6 +81,18 @@ impl Category {
         Category::Storage,
         Category::Logs,
     ];
+
+    /// Stable lowercase key, e.g. for page names.
+    pub fn key(self) -> &'static str {
+        match self {
+            Category::Packages => "packages",
+            Category::Security => "security",
+            Category::Reboot => "reboot",
+            Category::Services => "services",
+            Category::Storage => "storage",
+            Category::Logs => "logs",
+        }
+    }
 
     pub fn title(self) -> &'static str {
         match self {
@@ -221,6 +265,8 @@ impl CheckReport {
 #[derive(Debug, Clone, Default)]
 pub struct Report {
     pub reports: Vec<CheckReport>,
+    /// Some results are incomplete and running as root would complete them.
+    pub root_would_help: bool,
 }
 
 impl Report {
@@ -236,6 +282,14 @@ impl Report {
         self.reports
             .iter()
             .filter(move |r| r.id.category() == category)
+    }
+
+    /// Worst status among the checks of `category`.
+    pub fn category_status(&self, category: Category) -> Status {
+        self.by_category(category)
+            .map(|r| r.status)
+            .max()
+            .unwrap_or(Status::Ok)
     }
 }
 

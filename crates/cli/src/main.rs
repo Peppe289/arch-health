@@ -5,7 +5,7 @@ use std::process::ExitCode;
 use anyhow::bail;
 use arch_health_adapters::{Options, system_ports};
 use arch_health_cli::Args;
-use arch_health_core::checks::{Context, Privilege, all_checks};
+use arch_health_core::checks::{Context, all_checks};
 use arch_health_core::{Category, CheckId, Config, run};
 use clap::Parser;
 
@@ -69,18 +69,7 @@ fn real_main() -> anyhow::Result<ExitCode> {
         reports.for_each(|r| out.report(r));
     }
 
-    let is_root = ports.system.is_root();
-    let limited = !is_root
-        && checks
-            .iter()
-            .filter(|c| c.privilege() == Privilege::Enhanced)
-            .any(|c| {
-                report
-                    .reports
-                    .iter()
-                    .any(|r| r.id == c.id() && r.limitation.is_some())
-            });
     let overall = report.overall();
-    out.footer(overall, limited);
+    out.footer(overall, report.root_would_help);
     Ok(ExitCode::from(overall.exit_code()))
 }

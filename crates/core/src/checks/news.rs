@@ -21,7 +21,12 @@ impl Check for ArchNews {
     fn run(&self, ctx: &Context<'_>) -> PortResult<CheckReport> {
         let mut items = ctx.ports.news.items()?;
         items.sort_by_key(|n| std::cmp::Reverse(n.published));
-        let upgrade = ctx.ports.packages.last_full_upgrade()?;
+        // An unreadable pacman log must not hide the news: fall back to a
+        // fixed window and say why.
+        let (upgrade, limitation) = match ctx.ports.packages.last_full_upgrade() {
+            Ok(u) => (u, None),
+            Err(e) => (None, Some(format!("last upgrade unknown ({e})"))),
+        };
         let since = upgrade.unwrap_or_else(|| {
             (Local::now() - TimeDelta::days(ctx.config.news_fallback_days)).fixed_offset()
         });
@@ -62,7 +67,8 @@ impl Check for ArchNews {
                 plural(unread.len(), "news item")
             );
             CheckReport::from_items(self.id(), unread, summary)
-        })
+        }
+        .with_limitation(limitation))
     }
 }
 
@@ -101,6 +107,23 @@ mod tests {
         assert_eq!(r.status, Status::Warning);
         assert_eq!(r.items.len(), 1);
         assert!(r.items[0].detail.starts_with("new"));
+    }
+
+    #[test]
+    fn unreadable_pacman_log_falls_back_to_window() {
+        let mut fake = Fake::default();
+        fake.news = vec![news("fresh", &chrono::Local::now().to_rfc3339())];
+        fake.pacman_log_readable = false;
+        let (ports, config) = (fake.ports(), Default::default());
+        let r = ArchNews
+            .run(&Context {
+                ports: &ports,
+                config: &config,
+            })
+            .unwrap();
+        assert_eq!(r.status, Status::Warning);
+        assert!(r.summary.contains("in the last 30 days"));
+        assert!(r.limitation.is_some());
     }
 
     #[test]

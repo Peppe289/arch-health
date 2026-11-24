@@ -128,7 +128,7 @@ pub fn legend(segments: &[(Status, usize)]) -> gtk::Box {
         let dot = gtk::Label::new(Some("●"));
         dot.add_css_class(style::class(*status));
         row.append(&dot);
-        let l = gtk::Label::new(Some(&format!("{n} {}", style::status_name(*status))));
+        let l = gtk::Label::new(Some(&format!("{n} {}", status.name())));
         l.set_xalign(0.0);
         row.append(&l);
         b.append(&row);

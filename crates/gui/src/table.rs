@@ -90,7 +90,7 @@ fn level_column() -> gtk::ColumnViewColumn {
             style::set_glyph(&g, status);
         }
         if let Some(l) = b.last_child().and_downcast::<gtk::Label>() {
-            l.set_text(style::status_name(status));
+            l.set_text(status.name());
         }
     });
     let col = gtk::ColumnViewColumn::new(Some("Level"), Some(factory));

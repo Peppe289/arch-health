@@ -213,22 +213,22 @@ fn status_counts(report: &Report) -> Vec<(Status, usize)> {
 }
 
 fn category_tile(report: &Report, category: Category, navigate: &Navigate) -> gtk::Button {
-    let reports: Vec<&CheckReport> = report.by_category(category).collect();
-    let worst = reports.iter().map(|r| r.status).max().unwrap_or(Status::Ok);
-    let problems = reports
-        .iter()
+    let status = report.category_status(category);
+    let checks = report.by_category(category).count();
+    let problems = report
+        .by_category(category)
         .filter(|r| r.status >= Status::Warning)
         .count();
 
     let b = gtk::Box::new(gtk::Orientation::Vertical, 4);
     let top = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    top.append(&style::glyph(worst));
+    top.append(&style::glyph(status));
     let name = label(category.title());
     name.add_css_class("check-title");
     top.append(&name);
     b.append(&top);
     let detail = match problems {
-        0 => format!("{} checks, all fine", reports.len()),
+        0 => format!("{checks} checks, all fine"),
         1 => "1 check needs attention".to_string(),
         n => format!("{n} checks need attention"),
     };
@@ -239,35 +239,20 @@ fn category_tile(report: &Report, category: Category, navigate: &Navigate) -> gt
         .tooltip_text(format!("Open {}", category.title()))
         .build();
     button.add_css_class("tile");
-    button.add_css_class(style::tile_class(worst));
+    button.add_css_class(style::tile_class(status));
     let nav = navigate.clone();
     button.connect_clicked(move |_| nav(category));
     button
 }
 
-pub fn fill_overview(
-    container: &gtk::Box,
-    report: Option<&Report>,
-    last_run: Option<&str>,
-    navigate: &Navigate,
-) {
-    clear(container);
-    let Some(report) = report else {
-        let spinner = gtk::Spinner::new();
-        spinner.start();
-        spinner.set_size_request(32, 32);
-        container.append(&spinner);
-        container.append(&label("Running the first check…"));
-        return;
-    };
+/// Donut, legend, overall headline and notes.
+fn overview_summary(report: &Report, last_run: Option<&str>) -> gtk::Box {
     let overall = report.overall();
-
-    // Summary: donut, legend, headline
-    let summary = card();
     let row = gtk::Box::new(gtk::Orientation::Horizontal, 24);
     let counts = status_counts(report);
     row.append(&charts::donut(counts.clone(), 150));
     row.append(&charts::legend(&counts));
+
     let text = gtk::Box::new(gtk::Orientation::Vertical, 6);
     text.set_valign(gtk::Align::Center);
     text.set_hexpand(true);
@@ -275,21 +260,23 @@ pub fn fill_overview(
     let g = style::glyph(overall);
     g.add_css_class("headline");
     h.append(&g);
-    h.append(&headline(style::headline(overall)));
+    h.append(&headline(overall.headline()));
     text.append(&h);
     if let Some(t) = last_run {
         text.append(&dim(&format!("Last check at {t}")));
     }
-    if report.reports.iter().any(|r| r.limitation.is_some()) {
+    if report.root_would_help {
         text.append(&dim("Some checks are incomplete without root privileges: \
              run `sudo arch-health` in a terminal for a complete report."));
     }
     row.append(&text);
-    summary.append(&row);
-    container.append(&summary);
 
-    // Category tiles
-    container.append(&section_title("Categories"));
+    let summary = card();
+    summary.append(&row);
+    summary
+}
+
+fn overview_tiles(report: &Report, navigate: &Navigate) -> gtk::FlowBox {
     let tiles = gtk::FlowBox::builder()
         .selection_mode(gtk::SelectionMode::None)
         .column_spacing(10)
@@ -301,10 +288,12 @@ pub fn fill_overview(
     for c in Category::ALL {
         tiles.insert(&category_tile(report, c, navigate), -1);
     }
-    container.append(&tiles);
+    tiles
+}
 
-    // Items that need action
-    container.append(&section_title("Needs attention"));
+/// Problem items across checks; a check in trouble without problem items
+/// (e.g. a degraded service manager) is listed by its summary.
+fn overview_attention(report: &Report) -> gtk::Box {
     let attention = card();
     let mut any = false;
     for r in &report.reports {
@@ -336,9 +325,11 @@ pub fn fill_overview(
     if !any {
         attention.append(&label("Nothing needs attention."));
     }
-    container.append(&attention);
+    attention
+}
 
-    // Errors with their time, across checks
+/// Timeline and table of the timed problems of every check.
+fn overview_errors(report: &Report) -> gtk::Box {
     let rows: Vec<Row> = report
         .reports
         .iter()
@@ -352,7 +343,6 @@ pub fn fill_overview(
                 })
         })
         .collect();
-    container.append(&section_title("Recent errors"));
     let errors = card();
     if rows.is_empty() {
         errors.append(&label("No errors recorded."));
@@ -363,7 +353,31 @@ pub fn fill_overview(
         ));
         errors.append(&timeline_view(rows, true));
     }
-    container.append(&errors);
+    errors
+}
+
+pub fn fill_overview(
+    container: &gtk::Box,
+    report: Option<&Report>,
+    last_run: Option<&str>,
+    navigate: &Navigate,
+) {
+    clear(container);
+    let Some(report) = report else {
+        let spinner = gtk::Spinner::new();
+        spinner.start();
+        spinner.set_size_request(32, 32);
+        container.append(&spinner);
+        container.append(&label("Running the first check…"));
+        return;
+    };
+    container.append(&overview_summary(report, last_run));
+    container.append(&section_title("Categories"));
+    container.append(&overview_tiles(report, navigate));
+    container.append(&section_title("Needs attention"));
+    container.append(&overview_attention(report));
+    container.append(&section_title("Recent errors"));
+    container.append(&overview_errors(report));
 }
 
 /// Generated from the CLI definition, so it never drifts from `--help`.

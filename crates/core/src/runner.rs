@@ -2,7 +2,7 @@
 
 use std::thread;
 
-use crate::checks::{Check, Context};
+use crate::checks::{Check, Context, Privilege};
 use crate::model::{CheckId, CheckReport, Report, Status};
 
 #[derive(Debug, Clone)]
@@ -17,7 +17,7 @@ pub fn run<F>(checks: &[Box<dyn Check>], ctx: &Context<'_>, on_event: F) -> Repo
 where
     F: Fn(Event) + Sync,
 {
-    let reports = thread::scope(|s| {
+    let reports: Vec<CheckReport> = thread::scope(|s| {
         let handles: Vec<_> = checks
             .iter()
             .map(|check| {
@@ -45,7 +45,16 @@ where
             })
             .collect()
     });
-    Report { reports }
+    // Root helps only checks that see more as root and reported a limit.
+    let root_would_help = !ctx.ports.system.is_root()
+        && checks
+            .iter()
+            .zip(&reports)
+            .any(|(c, r)| c.privilege() == Privilege::Enhanced && r.limitation.is_some());
+    Report {
+        reports,
+        root_would_help,
+    }
 }
 
 fn run_one(check: &dyn Check, ctx: &Context<'_>) -> CheckReport {
@@ -93,5 +102,34 @@ mod tests {
             .find(|r| r.id == CheckId::AurUpdates)
             .unwrap();
         assert_eq!(aur.status, Status::Skipped);
+        assert!(!report.root_would_help);
+    }
+
+    #[test]
+    fn root_would_help_only_for_enhanced_checks() {
+        // Journal not readable → Enhanced checks report a limitation.
+        let mut fake = Fake::default();
+        fake.journal_readable = false;
+        let ports = fake.ports();
+        let config = Config {
+            offline: true,
+            ..Config::default()
+        };
+        let ctx = Context {
+            ports: &ports,
+            config: &config,
+        };
+        assert!(run(&all_checks(), &ctx, |_| {}).root_would_help);
+
+        // Already root: nothing to suggest.
+        let mut fake = Fake::default();
+        fake.journal_readable = false;
+        fake.root = true;
+        let ports = fake.ports();
+        let ctx = Context {
+            ports: &ports,
+            config: &config,
+        };
+        assert!(!run(&all_checks(), &ctx, |_| {}).root_would_help);
     }
 }
