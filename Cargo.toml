@@ -8,5 +8,7 @@ alpm = "5"
 anyhow = "1.0.105"
 clap = { version = "4", features = ["derive"] }
 rustix = { version = "1", features = ["fs", "process", "system"] }
+serde = { version = "1.0.229", features = ["derive"] }
 systemd = { version = "0.11", default-features = false, features = ["journal"] }
+ureq = { version = "3", default-features = false, features = ["native-tls", "gzip", "json"] }
 zbus = "5"

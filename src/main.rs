@@ -19,6 +19,10 @@ struct Args {
     #[arg(long)]
     no_sync: bool,
 
+    /// Nessun accesso alla rete (implica --no-sync, salta il controllo AUR)
+    #[arg(long)]
+    offline: bool,
+
     /// Mostra tutti i dettagli
     #[arg(short, long)]
     verbose: bool,
@@ -28,6 +32,7 @@ fn main() -> ExitCode {
     let args = Args::parse();
     let ctx = Ctx {
         no_sync: args.no_sync,
+        offline: args.offline,
         is_root: rustix::process::geteuid().is_root(),
     };
     let out = Renderer::new(args.verbose);

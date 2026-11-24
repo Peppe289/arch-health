@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use alpm::{Alpm, PackageReason};
 use anyhow::{Context, Result};
 
-use crate::checks::Ctx;
+use crate::checks::{Ctx, aur};
 use crate::pacman_conf::PacmanConf;
 use crate::report::{CheckResult, Status};
 
@@ -85,7 +85,7 @@ fn run_inner(ctx: &Ctx) -> Result<Vec<CheckResult>> {
     let mut results = Vec::new();
 
     // Updates: private, freshly synced dbs (unless --no-sync).
-    let (handle, sync_note) = if ctx.no_sync {
+    let (handle, sync_note) = if ctx.no_sync || ctx.offline {
         (open_handle(&conf, &conf.db_path)?, Some("database di sistema, senza sync"))
     } else {
         let dir = prepare_private_dbpath(&conf)?;
@@ -105,8 +105,12 @@ fn run_inner(ctx: &Ctx) -> Result<Vec<CheckResult>> {
 
     results.push(updates(&handle, &conf, sync_note));
     results.push(orphans(&handle));
-    results.push(foreign(&handle));
+    let foreign = foreign_pkgs(&handle);
+    results.push(foreign_summary(&foreign));
     results.push(pacnew(&handle, &conf.root_dir));
+    if !ctx.offline {
+        results.extend(aur::check(&foreign));
+    }
     Ok(results)
 }
 
@@ -150,16 +154,21 @@ fn orphans(handle: &Alpm) -> CheckResult {
     CheckResult::new("Orfani", status, summary).with_details(list)
 }
 
-fn foreign(handle: &Alpm) -> CheckResult {
+/// (name, version) of installed packages not provided by any sync repo.
+fn foreign_pkgs(handle: &Alpm) -> Vec<(String, String)> {
     let syncdbs = handle.syncdbs();
-    let list: Vec<String> = handle
+    handle
         .localdb()
         .pkgs()
         .iter()
         .filter(|p| syncdbs.iter().all(|db| db.pkg(p.name()).is_err()))
-        .map(|p| format!("{} {}", p.name(), p.version()))
-        .collect();
-    let summary = format!("{} pacchetti non presenti nei repo (AUR/locali)", list.len());
+        .map(|p| (p.name().to_string(), p.version().to_string()))
+        .collect()
+}
+
+fn foreign_summary(foreign: &[(String, String)]) -> CheckResult {
+    let list = foreign.iter().map(|(n, v)| format!("{n} {v}")).collect();
+    let summary = format!("{} pacchetti non presenti nei repo (AUR/locali)", foreign.len());
     CheckResult::new("Pacchetti esterni", Status::Info, summary).with_details(list)
 }
 

@@ -1,3 +1,4 @@
+pub mod aur;
 pub mod journal;
 pub mod pacman;
 pub mod reboot;
@@ -9,6 +10,8 @@ use crate::report::CheckResult;
 /// Options shared by all checks.
 pub struct Ctx {
     pub no_sync: bool,
+    /// No network at all: no db sync, no AUR queries.
+    pub offline: bool,
     pub is_root: bool,
 }
 
