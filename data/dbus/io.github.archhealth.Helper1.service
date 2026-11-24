@@ -1,0 +1,7 @@
+# /usr/share/dbus-1/system-services/io.github.archhealth.Helper1.service
+# Starts the helper on demand through systemd (sandboxed unit).
+[D-BUS Service]
+Name=io.github.archhealth.Helper1
+Exec=/usr/lib/arch-health/arch-health-helper
+User=root
+SystemdService=arch-health-helper.service

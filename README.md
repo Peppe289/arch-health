@@ -51,6 +51,40 @@ install -Dm644 data/arch-health.desktop ~/.local/share/applications/arch-health.
 
 (`arch-health-gui` must be in `PATH`; packaging will install everything.)
 
+### Privileged helper (Unlock…)
+
+Some checks see more as root (the system journal for users outside
+`wheel`/`adm`, and the processes of every user). In the GUI the **Unlock…**
+button asks for the administrator password through polkit (the desktop's
+own dialog) and completes those results through `arch-health-helper`:
+
+- D-Bus activated on the system bus, runs as root only while needed and
+  exits after 60 s idle; sandboxed by its systemd unit;
+- read-only: it exposes four queries (`Authorize`, `JournalErrors`,
+  `Coredumps`, `StaleLibraries`), each authorized by polkit action
+  `io.github.archhealth.read-privileged` (`auth_admin_keep`: the password
+  is remembered for a few minutes, then asked again).
+
+Install it (as root):
+
+```
+cargo build --release -p arch-health-helper
+sudo install -Dm755 target/release/arch-health-helper /usr/lib/arch-health/arch-health-helper
+sudo install -Dm644 data/dbus/io.github.archhealth.Helper1.conf /usr/share/dbus-1/system.d/io.github.archhealth.Helper1.conf
+sudo install -Dm644 data/dbus/io.github.archhealth.Helper1.service /usr/share/dbus-1/system-services/io.github.archhealth.Helper1.service
+sudo install -Dm644 data/polkit/io.github.archhealth.policy /usr/share/polkit-1/actions/io.github.archhealth.policy
+sudo install -Dm644 data/systemd/arch-health-helper.service /usr/lib/systemd/system/arch-health-helper.service
+sudo systemctl daemon-reload
+```
+
+Without the helper the GUI keeps working and says so when Unlock is used.
+Over SSH use `sudo arch-health` instead.
+
+Development without root: `cargo run -p arch-health-helper -- --session`
+serves on the session bus as your user and skips polkit; start the GUI with
+`ARCH_HEALTH_HELPER_BUS=session`. The client test runs against it with
+`ARCH_HEALTH_HELPER_BUS=session cargo test -p arch-health-adapters -- --ignored`.
+
 ## Checks
 
 | Key | Category | What | Source |
@@ -81,6 +115,7 @@ crates/core      domain model, checks (pure rules), runner, ports (traits)
 crates/adapters  ports implemented with libalpm, D-Bus, sd-journal, procfs/sysfs, HTTP
 crates/cli       the `arch-health` command
 crates/gui       `arch-health-gui`: GTK4 window, tray icon, periodic checks, notifications
+crates/helper    `arch-health-helper`: root, read-only, polkit-authorized D-Bus helper
 ```
 
 - Requirements: [docs/requirements.md](docs/requirements.md)
@@ -115,6 +150,7 @@ crates/gui       `arch-health-gui`: GTK4 window, tray icon, periodic checks, not
 |---------|-----|
 | `systemd`, `dbus` | failed units |
 | `udisks2` | drive health (D-Bus activated) |
+| `polkit` + a polkit agent | Unlock… in the GUI (Plasma ships `polkit-kde-agent`) |
 | a StatusNotifierItem host | tray icon (Plasma has it; GNOME needs the AppIndicator extension). Without it the GUI works as a normal window |
 | a notification daemon | desktop notifications |
 

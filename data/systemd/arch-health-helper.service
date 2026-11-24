@@ -1,0 +1,37 @@
+# /usr/lib/systemd/system/arch-health-helper.service
+# Read-only helper, D-Bus activated, exits when idle. Sandboxed: it only
+# needs to read /proc of every process and the journal.
+[Unit]
+Description=arch-health privileged helper (read-only)
+
+[Service]
+Type=dbus
+BusName=io.github.archhealth.Helper1
+ExecStart=/usr/lib/arch-health/arch-health-helper
+
+# Reading other users' /proc/PID/maps and the journal
+CapabilityBoundingSet=CAP_SYS_PTRACE CAP_DAC_READ_SEARCH
+AmbientCapabilities=
+NoNewPrivileges=yes
+
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateNetwork=yes
+RestrictAddressFamilies=AF_UNIX
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+UMask=0077

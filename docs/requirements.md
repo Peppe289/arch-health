@@ -44,7 +44,7 @@ explicitly **out of scope**.
 | ID  | Requirement | Status |
 |-----|-------------|--------|
 | N1  | **No process execution.** Data comes only from libraries and system APIs (libalpm, D-Bus, sd-journal, procfs/sysfs, syscalls, HTTP). See ADR-0001. | Done |
-| N2  | Runs as a normal user. Checks that are incomplete without root say so; elevation is requested only when needed: `sudo` from the CLI, the desktop polkit dialog from the GUI. See ADR-0005. | Partial (CLI hint, GUI note; polkit helper planned) |
+| N2  | Runs as a normal user. Checks that are incomplete without root say so; elevation is requested only when needed: `sudo` from the CLI, the desktop polkit dialog from the GUI. See ADR-0005. | Done (CLI: sudo hint; GUI: Unlock… via polkit helper) |
 | N3  | User-facing text in English. | Done |
 | N4  | Published on GitHub; then CI; then packaging (PKGBUILD). | Planned |
 | N5  | Domain logic is testable without a real system (fake adapters), so tests run in CI. | Done |

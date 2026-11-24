@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- /usr/share/polkit-1/actions/io.github.archhealth.policy -->
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<policyconfig>
+  <vendor>arch-health</vendor>
+  <action id="io.github.archhealth.read-privileged">
+    <description>Read system health data that requires administrator privileges</description>
+    <message>Authentication is required to read the system journal and inspect the processes of all users</message>
+    <icon_name>security-high</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+</policyconfig>

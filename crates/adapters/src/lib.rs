@@ -2,6 +2,7 @@
 //! Libraries and system APIs only, never process execution (ADR-0001).
 
 mod dbus;
+pub mod helper;
 mod http;
 mod journal;
 mod linux;
@@ -12,6 +13,8 @@ use std::sync::Arc;
 
 use arch_health_core::Ports;
 
+pub use journal::SdJournal;
+pub use linux::LinuxSystem;
 pub use packages::AlpmPackageDb;
 
 #[derive(Debug, Clone, Copy)]
@@ -32,5 +35,16 @@ pub fn system_ports(options: Options) -> Ports {
         journal: Arc::new(journal::SdJournal),
         storage: Arc::new(linux::LinuxStorage),
         system: Arc::new(linux::LinuxSystem),
+    }
+}
+
+/// Like [`system_ports`], but the checks that need root read through the
+/// privileged helper (journal, all processes). Falls back to local reads
+/// when the helper cannot answer.
+pub fn system_ports_with_helper(options: Options, client: Arc<helper::HelperClient>) -> Ports {
+    Ports {
+        journal: Arc::new(helper::HelperJournal::new(client.clone())),
+        system: Arc::new(helper::HelperSystem::new(client)),
+        ..system_ports(options)
     }
 }
