@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=arch-health monitor
+Comment=Periodic health checks with a tray icon
+Exec=arch-health-gui --background
+Icon=security-high
+Terminal=false
+NoDisplay=true
+X-KDE-autostart-phase=2
+X-GNOME-Autostart-enabled=true

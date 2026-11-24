@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=arch-health
+GenericName=System Health
+Comment=Health report for your Arch Linux installation
+Exec=arch-health-gui
+Icon=security-high
+Terminal=false
+Categories=System;Monitor;
+Keywords=arch;pacman;updates;health;
+StartupNotify=true

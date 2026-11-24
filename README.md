@@ -21,6 +21,31 @@ sudo ./target/release/arch-health           # complete results for root-only dat
 
 Exit status: `0` healthy · `1` warnings · `2` critical · `3` usage/startup error.
 
+### Desktop
+
+```
+./target/release/arch-health-gui               # window + tray icon
+./target/release/arch-health-gui --background  # tray only (session autostart)
+```
+
+- Sidebar with an overview and one page per category; problems are expanded.
+- Tray icon (StatusNotifierItem) colored by the overall status; left click opens
+  the window, the menu offers *Run checks now* and *Quit*. Closing the window
+  keeps the monitor running in the tray.
+- Checks run at start and every 6 hours; a desktop notification is sent only
+  when the status gets worse (on the first run: only if critical).
+- *Command line* page generated from the CLI definition.
+- Single instance: launching it again shows the existing window.
+
+To start the monitor with the session:
+
+```
+install -Dm644 data/arch-health-autostart.desktop ~/.config/autostart/arch-health.desktop
+install -Dm644 data/arch-health.desktop ~/.local/share/applications/arch-health.desktop
+```
+
+(`arch-health-gui` must be in `PATH`; packaging will install everything.)
+
 ## Checks
 
 | Key | Category | What | Source |
@@ -50,6 +75,7 @@ crates/core      domain model, checks (pure rules), runner, ports (traits)
                  no system dependencies: builds and tests anywhere
 crates/adapters  ports implemented with libalpm, D-Bus, sd-journal, procfs/sysfs, HTTP
 crates/cli       the `arch-health` command
+crates/gui       `arch-health-gui`: GTK4 window, tray icon, periodic checks, notifications
 ```
 
 - Requirements: [docs/requirements.md](docs/requirements.md)
@@ -66,6 +92,7 @@ crates/cli       the `arch-health` command
 | `pacman` | libalpm headers and `libalpm.pc` |
 | `systemd-libs` | libsystemd for sd-journal |
 | `openssl` | native-tls |
+| `gtk4` | GUI (headers and pkg-config) |
 
 ### Runtime
 
@@ -74,6 +101,7 @@ crates/cli       the `arch-health` command
 | `pacman` | `libalpm.so` |
 | `systemd-libs` | `libsystemd.so` |
 | `openssl`, `ca-certificates` | HTTPS with the system CA store |
+| `gtk4` | GUI only |
 | `glibc`, `gcc-libs` | Rust runtime |
 
 ### Services used at runtime (optional: a missing one makes its check report "could not run")
@@ -82,6 +110,8 @@ crates/cli       the `arch-health` command
 |---------|-----|
 | `systemd`, `dbus` | failed units |
 | `udisks2` | drive health (D-Bus activated) |
+| a StatusNotifierItem host | tray icon (Plasma has it; GNOME needs the AppIndicator extension). Without it the GUI works as a normal window |
+| a notification daemon | desktop notifications |
 
 D-Bus is spoken by `zbus` (pure Rust): no libdbus needed.
 
@@ -108,6 +138,8 @@ Commit subjects follow `type(component): title`
   tracker entries are stale, so they do not raise alarms.
 - AUR requests send only the names of the installed foreign packages, like
   any AUR helper, with User-Agent `arch-health/<version>`.
+- With the `breeze-gtk` theme GTK4 prints `GtkGizmo … reported min width -2`
+  warnings for scrollbars: a known theme issue, harmless.
 - libalpm uses gpgme internally for signature checks; official repository
   databases are not signed, so gpg is not started during the refresh.
 

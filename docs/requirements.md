@@ -29,10 +29,10 @@ explicitly **out of scope**.
 | F12  | Verify the integrity of installed package files (equivalent of `pacman -Qk`/`-Qkk`). | Planned |
 | F13  | Read-only: the software never changes the system. | Done |
 | F14  | Actions (update, restart a unit, remove orphans, merge `.pacnew`, ...). Must be possible to add without redesign. | Future |
-| G1   | Desktop GUI showing the report grouped by category, with details per finding. | Planned |
-| G2   | System tray icon showing the overall status and that the monitor is running. | Planned |
-| G3   | Periodic checks in the background with a desktop notification when the status gets worse. | Planned |
-| G4   | GUI section listing the CLI commands and options. | Planned |
+| G1   | Desktop GUI showing the report grouped by category, with details per finding. | Done |
+| G2   | System tray icon showing the overall status and that the monitor is running. | Done |
+| G3   | Periodic checks in the background (every 6 h and at session start) with a desktop notification when the status gets worse. | Done |
+| G4   | GUI section listing the CLI commands and options, generated from the CLI definition. | Done |
 | H1   | Keep a lightweight history of the overall status (not raw data). Format and retention to be agreed. | TBD |
 | C1   | Command line interface with the same checks, usable over SSH. | Done |
 | C2   | Exit code reflects the overall status (0 ok, 1 warnings, 2 critical). | Done |
@@ -42,7 +42,7 @@ explicitly **out of scope**.
 | ID  | Requirement | Status |
 |-----|-------------|--------|
 | N1  | **No process execution.** Data comes only from libraries and system APIs (libalpm, D-Bus, sd-journal, procfs/sysfs, syscalls, HTTP). See ADR-0001. | Done |
-| N2  | Runs as a normal user. Checks that are incomplete without root say so; elevation is requested only when needed: `sudo` from the CLI, the desktop polkit dialog from the GUI. See ADR-0005. | Partial (CLI hint) |
+| N2  | Runs as a normal user. Checks that are incomplete without root say so; elevation is requested only when needed: `sudo` from the CLI, the desktop polkit dialog from the GUI. See ADR-0005. | Partial (CLI hint, GUI note; polkit helper planned) |
 | N3  | User-facing text in English. | Done |
 | N4  | Published on GitHub; then CI; then packaging (PKGBUILD). | Planned |
 | N5  | Domain logic is testable without a real system (fake adapters), so tests run in CI. | Done |
