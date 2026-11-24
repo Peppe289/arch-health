@@ -21,6 +21,7 @@ pub struct PacmanConf {
     pub root_dir: PathBuf,
     pub db_path: PathBuf,
     pub gpg_dir: PathBuf,
+    pub log_file: PathBuf,
     pub architectures: Vec<String>,
     pub sig_level: SigLevel,
     pub parallel_downloads: u32,
@@ -162,6 +163,10 @@ impl Parser {
 }
 
 impl PacmanConf {
+    pub fn load_default() -> Result<Self> {
+        Self::load(Path::new("/etc/pacman.conf"))
+    }
+
     pub fn load(path: &Path) -> Result<Self> {
         let mut p = Parser { section: None, options: vec![], repos: vec![] };
         p.parse_file(path, 0)?;
@@ -170,6 +175,7 @@ impl PacmanConf {
             root_dir: PathBuf::from("/"),
             db_path: PathBuf::from("/var/lib/pacman/"),
             gpg_dir: PathBuf::from("/etc/pacman.d/gnupg/"),
+            log_file: PathBuf::from("/var/log/pacman.log"),
             architectures: vec![],
             sig_level: default_sig_level(),
             parallel_downloads: 1,
@@ -183,6 +189,7 @@ impl PacmanConf {
                 "RootDir" => conf.root_dir = value.into(),
                 "DBPath" => conf.db_path = value.into(),
                 "GPGDir" => conf.gpg_dir = value.into(),
+                "LogFile" => conf.log_file = value.into(),
                 "Architecture" => {
                     for a in value.split_whitespace() {
                         let a = if a == "auto" { machine.as_str() } else { a };

@@ -15,8 +15,6 @@ use crate::checks::{Ctx, aur};
 use crate::pacman_conf::PacmanConf;
 use crate::report::{CheckResult, Status};
 
-const PACMAN_CONF: &str = "/etc/pacman.conf";
-
 fn cache_dir() -> PathBuf {
     let base = std::env::var_os("XDG_CACHE_HOME")
         .map(PathBuf::from)
@@ -81,7 +79,7 @@ pub fn run(ctx: &Ctx) -> Vec<CheckResult> {
 }
 
 fn run_inner(ctx: &Ctx) -> Result<Vec<CheckResult>> {
-    let conf = PacmanConf::load(Path::new(PACMAN_CONF))?;
+    let conf = PacmanConf::load_default()?;
     let mut results = Vec::new();
 
     // Updates: private, freshly synced dbs (unless --no-sync).

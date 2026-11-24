@@ -1,7 +1,10 @@
+pub mod arch;
 pub mod aur;
 pub mod journal;
+pub mod news;
 pub mod pacman;
 pub mod reboot;
+pub mod security;
 pub mod storage;
 pub mod systemd;
 
@@ -22,6 +25,7 @@ pub struct Section {
 
 pub const SECTIONS: &[Section] = &[
     Section { name: "Pacchetti", run: pacman::run },
+    Section { name: "Sicurezza e news", run: arch::run },
     Section { name: "Riavvio", run: reboot::run },
     Section { name: "Servizi", run: systemd::run },
     Section { name: "Dischi", run: storage::run },
