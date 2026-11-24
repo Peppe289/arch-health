@@ -30,7 +30,7 @@ journal for users outside `wheel`/`adm`/`systemd-journal`). Future actions
 - Helper: `arch-health-helper`, bus name and interface
   `io.github.archhealth.Helper1`, object `/io/github/archhealth/Helper1`.
   Methods: `Authorize(b interactive) → b`, `JournalErrors() → a(tsys)`,
-  `Coredumps(t since_usec) → a(tssb)`, `StaleLibraries() → a{su}`; at most
+  `Coredumps(t since_usec) → a(tssb)`, `StaleLibraries() → (a{su}b)` (b: every process inspected); at most
   5000 entries per call. Exits after 60 s without calls (a call waiting for
   the password keeps it alive).
 - Every method checks polkit `CheckAuthorization` for the caller's bus name

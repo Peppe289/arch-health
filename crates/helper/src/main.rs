@@ -182,11 +182,7 @@ impl Helper {
         let _g = CallGuard::new(&self.activity);
         self.require(conn, &hdr).await?;
         let stale = LinuxSystem.stale_libraries().map_err(failed)?;
-        Ok(stale
-            .processes
-            .into_iter()
-            .map(|(k, v)| (k, v.min(u32::MAX as usize) as u32))
-            .collect())
+        Ok(helper::stale_to_wire(stale))
     }
 }
 

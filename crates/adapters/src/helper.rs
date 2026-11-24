@@ -35,8 +35,8 @@ pub const DEV_BUS_ENV: &str = "ARCH_HEALTH_HELPER_BUS";
 pub type WireLogEntry = (u64, String, u8, String);
 /// (time µs since epoch, executable, signal or "", current boot)
 pub type WireCoredump = (u64, String, String, bool);
-/// process name → number of processes
-pub type WireStaleLibraries = HashMap<String, u32>;
+/// (process name → number of processes, every process was inspected)
+pub type WireStaleLibraries = (HashMap<String, u32>, bool);
 
 fn to_usec(t: SystemTime) -> u64 {
     t.duration_since(UNIX_EPOCH).unwrap_or_default().as_micros() as u64
@@ -74,6 +74,25 @@ pub fn coredump_from_wire((t, executable, signal, current_boot): WireCoredump) -
         executable,
         signal: (!signal.is_empty()).then_some(signal),
         current_boot,
+    }
+}
+
+pub fn stale_to_wire(s: StaleLibraries) -> WireStaleLibraries {
+    let processes = s
+        .processes
+        .into_iter()
+        .map(|(k, v)| (k, u32::try_from(v).unwrap_or(u32::MAX)))
+        .collect();
+    (processes, s.complete)
+}
+
+pub fn stale_from_wire((processes, complete): WireStaleLibraries) -> StaleLibraries {
+    StaleLibraries {
+        processes: processes
+            .into_iter()
+            .map(|(k, v)| (k, v as usize))
+            .collect(),
+        complete,
     }
 }
 
@@ -159,10 +178,7 @@ impl HelperClient {
 
     pub fn stale_libraries(&self) -> Result<StaleLibraries, HelperError> {
         let wire: WireStaleLibraries = self.proxy()?.call("StaleLibraries", &())?;
-        Ok(StaleLibraries {
-            processes: wire.into_iter().map(|(k, v)| (k, v as usize)).collect(),
-            complete: true,
-        })
+        Ok(stale_from_wire(wire))
     }
 }
 
@@ -268,6 +284,13 @@ mod tests {
             current_boot: true,
         };
         assert_eq!(coredump_from_wire(coredump_to_wire(c.clone())), c);
+
+        // An incomplete scan must stay incomplete across the bus.
+        let s = StaleLibraries {
+            processes: [("firefox".to_string(), 3)].into(),
+            complete: false,
+        };
+        assert_eq!(stale_from_wire(stale_to_wire(s.clone())), s);
     }
 
     #[test]
