@@ -1,17 +1,13 @@
 //! AUR updates: foreign packages (from libalpm) are looked up with the AUR
 //! RPC v5 `info` endpoint and compared with `alpm::vercmp`, like paru/yay.
-//!
-//! HTTPS goes through ureq + native-tls, so the system OpenSSL and the
-//! system CA store (`ca-certificates`) are used.
 
 use std::cmp::Ordering;
 use std::collections::HashMap;
-use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
-use ureq::tls::{RootCerts, TlsConfig, TlsProvider};
 
+use crate::net;
 use crate::report::{CheckResult, Status};
 
 const RPC_URL: &str = "https://aur.archlinux.org/rpc/v5/info";
@@ -34,19 +30,6 @@ struct AurPkg {
     version: String,
     out_of_date: Option<i64>,
     maintainer: Option<String>,
-}
-
-fn agent() -> ureq::Agent {
-    let tls = TlsConfig::builder()
-        .provider(TlsProvider::NativeTls)
-        .root_certs(RootCerts::PlatformVerifier)
-        .build();
-    ureq::Agent::config_builder()
-        .tls_config(tls)
-        .timeout_global(Some(Duration::from_secs(20)))
-        .user_agent(concat!("arch-health/", env!("CARGO_PKG_VERSION")))
-        .build()
-        .new_agent()
 }
 
 fn query(agent: &ureq::Agent, names: &[&str]) -> Result<Vec<AurPkg>> {
@@ -91,7 +74,7 @@ fn check_inner(foreign: &[(String, String)]) -> Result<Vec<CheckResult>> {
     if foreign.is_empty() {
         return Ok(vec![CheckResult::new("Aggiornamenti AUR", Status::Ok, "nessun pacchetto esterno")]);
     }
-    let agent = agent();
+    let agent = net::agent();
     let names: Vec<&str> = foreign.iter().map(|(n, _)| n.as_str()).collect();
     let mut aur: HashMap<String, AurPkg> = HashMap::new();
     for chunk in names.chunks(CHUNK) {

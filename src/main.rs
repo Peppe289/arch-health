@@ -1,4 +1,5 @@
 mod checks;
+mod net;
 mod pacman_conf;
 mod report;
 
