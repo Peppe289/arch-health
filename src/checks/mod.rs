@@ -1,3 +1,4 @@
+pub mod journal;
 pub mod pacman;
 pub mod reboot;
 pub mod storage;
@@ -21,4 +22,5 @@ pub const SECTIONS: &[Section] = &[
     Section { name: "Riavvio", run: reboot::run },
     Section { name: "Servizi", run: systemd::run },
     Section { name: "Dischi", run: storage::run },
+    Section { name: "Journal", run: journal::run },
 ];
