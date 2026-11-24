@@ -29,7 +29,7 @@ Desktop window and tray monitor of arch-health.
 Options:
   --background    start in the tray without opening the window
   --page <PAGE>   open this page: overview, packages, security, reboot,
-                  services, storage, logs, history, command-line
+                  services, storage, logs, command-line
   -h, --help      print this help";
 
 struct Args {

@@ -366,16 +366,6 @@ pub fn fill_overview(
     container.append(&errors);
 }
 
-pub fn history_page() -> gtk::Widget {
-    let (scrolled, content) = scrolled_page();
-    content.append(&headline("History"));
-    content.append(&label(
-        "Not available yet. How the status history is stored and shown is still \
-         being designed (docs/adr/0010-history.md).",
-    ));
-    scrolled.upcast()
-}
-
 /// Generated from the CLI definition, so it never drifts from `--help`.
 pub fn command_line_page() -> gtk::Widget {
     let (scrolled, content) = scrolled_page();

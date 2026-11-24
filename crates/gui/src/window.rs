@@ -10,7 +10,6 @@ use crate::pages;
 use crate::style;
 
 pub const OVERVIEW: &str = "overview";
-pub const HISTORY: &str = "history";
 pub const COMMAND_LINE: &str = "command-line";
 
 pub struct Ui {
@@ -98,7 +97,7 @@ pub fn build(app: &gtk::Application) -> Ui {
         page_names.push(key);
     }
 
-    // Static pages, after a separator
+    // Static page, after a separator
     let sep = gtk::ListBoxRow::builder()
         .child(&gtk::Separator::new(gtk::Orientation::Horizontal))
         .selectable(false)
@@ -106,14 +105,9 @@ pub fn build(app: &gtk::Application) -> Ui {
         .build();
     sidebar.append(&sep);
     page_names.push(String::new());
-    for (name, title, page) in [
-        (HISTORY, "History", pages::history_page()),
-        (COMMAND_LINE, "Command line", pages::command_line_page()),
-    ] {
-        stack.add_named(&page, Some(name));
-        sidebar.append(&sidebar_row(title, None));
-        page_names.push(name.into());
-    }
+    stack.add_named(&pages::command_line_page(), Some(COMMAND_LINE));
+    sidebar.append(&sidebar_row("Command line", None));
+    page_names.push(COMMAND_LINE.into());
 
     let stack_for_sidebar = stack.clone();
     sidebar.connect_row_selected(move |_, row| {
@@ -170,7 +164,7 @@ pub fn build(app: &gtk::Application) -> Ui {
 pub fn page_names() -> Vec<String> {
     let mut v = vec![OVERVIEW.to_string()];
     v.extend(Category::ALL.iter().map(|c| page_key(*c)));
-    v.extend([String::new(), HISTORY.into(), COMMAND_LINE.into()]);
+    v.extend([String::new(), COMMAND_LINE.into()]);
     v
 }
 

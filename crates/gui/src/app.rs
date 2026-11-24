@@ -230,7 +230,7 @@ impl App {
     }
 
     /// Notify only when the status gets worse. On the first run there is no
-    /// previous status (history is not stored yet): notify critical only.
+    /// previous status: notify critical only.
     fn maybe_notify(&self, report: &Report) {
         let overall = report.overall();
         let previous = self.last_overall.replace(Some(overall));

@@ -64,7 +64,7 @@ impl Category {
 
 macro_rules! check_ids {
     ($($variant:ident => ($key:literal, $title:literal, $cat:ident)),* $(,)?) => {
-        /// Stable identifier of a check: used for configuration, history and
+        /// Stable identifier of a check: used for configuration, frontends and
         /// the CLI. The key must never change once released.
         #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
         pub enum CheckId { $($variant),* }

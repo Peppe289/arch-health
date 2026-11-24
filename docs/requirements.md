@@ -1,8 +1,8 @@
 # Requirements
 
 Status of each requirement: **Done**, **Planned** (agreed, not yet built),
-**Future** (agreed direction, after the software is stable), **TBD** (to be
-discussed).
+**Future** (agreed direction, after the software is stable), **Deferred**
+(taken out of scope for now, may come back), **TBD** (to be discussed).
 
 ## Goal
 
@@ -35,7 +35,7 @@ explicitly **out of scope**.
 | G4   | GUI section listing the CLI commands and options, generated from the CLI definition. | Done |
 | G5   | Charts, not only text: status of all checks, disk usage, errors over time. | Done |
 | G6   | Errors shown in a table with their time and details (sortable, filterable), per check and across checks on the overview. | Done |
-| H1   | Keep a lightweight history of the overall status (not raw data). Format and retention to be agreed. | TBD |
+| H1   | Keep a lightweight history of the overall status (not raw data). Proposal in ADR-0010. | Deferred (out of scope for now) |
 | C1   | Command line interface with the same checks, usable over SSH. | Done |
 | C2   | Exit code reflects the overall status (0 ok, 1 warnings, 2 critical). | Done |
 
