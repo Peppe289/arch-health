@@ -33,6 +33,8 @@ explicitly **out of scope**.
 | G2   | System tray icon showing the overall status and that the monitor is running. | Done |
 | G3   | Periodic checks in the background (every 6 h and at session start) with a desktop notification when the status gets worse. | Done |
 | G4   | GUI section listing the CLI commands and options, generated from the CLI definition. | Done |
+| G5   | Charts, not only text: status of all checks, disk usage, errors over time. | Done |
+| G6   | Errors shown in a table with their time and details (sortable, filterable), per check and across checks on the overview. | Done |
 | H1   | Keep a lightweight history of the overall status (not raw data). Format and retention to be agreed. | TBD |
 | C1   | Command line interface with the same checks, usable over SSH. | Done |
 | C2   | Exit code reflects the overall status (0 ok, 1 warnings, 2 critical). | Done |

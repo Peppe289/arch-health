@@ -21,6 +21,7 @@ pub struct Ui {
     pub overview: gtk::Box,
     pub categories: HashMap<Category, gtk::Box>,
     pub sidebar_glyphs: HashMap<String, gtk::Label>,
+    pub sidebar: gtk::ListBox,
 }
 
 fn page_key(c: Category) -> String {
@@ -161,6 +162,33 @@ pub fn build(app: &gtk::Application) -> Ui {
         overview,
         categories,
         sidebar_glyphs,
+        sidebar,
+    }
+}
+
+/// Page names in sidebar order (an empty name is the separator row).
+pub fn page_names() -> Vec<String> {
+    let mut v = vec![OVERVIEW.to_string()];
+    v.extend(Category::ALL.iter().map(|c| page_key(*c)));
+    v.extend([String::new(), HISTORY.into(), COMMAND_LINE.into()]);
+    v
+}
+
+/// Shows the page called `name`; false if there is no such page.
+pub fn select_page(sidebar: &gtk::ListBox, name: &str) -> bool {
+    match page_names().iter().position(|n| !n.is_empty() && n == name) {
+        Some(i) => {
+            sidebar.select_row(sidebar.row_at_index(i as i32).as_ref());
+            true
+        }
+        None => false,
+    }
+}
+
+/// Shows the page of `c` (sidebar row 0 is the overview).
+pub fn select_category(sidebar: &gtk::ListBox, c: Category) {
+    if let Some(i) = Category::ALL.iter().position(|x| *x == c) {
+        sidebar.select_row(sidebar.row_at_index(i as i32 + 1).as_ref());
     }
 }
 

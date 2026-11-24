@@ -1,13 +1,21 @@
 //! Page contents built from core reports. Pure widget construction: no
 //! state, no I/O.
 
+use std::rc::Rc;
+use std::time::SystemTime;
+
 use arch_health_core::{Category, CheckId, CheckReport, Item, Report, Status};
 use gtk::glib;
 use gtk::prelude::*;
 
+use crate::charts;
 use crate::style;
+use crate::table::{self, Row};
 
 const MARGIN: i32 = 18;
+
+/// Called when a category tile on the overview is clicked.
+pub type Navigate = Rc<dyn Fn(Category)>;
 
 pub fn clear(container: &gtk::Box) {
     while let Some(child) = container.first_child() {
@@ -29,23 +37,47 @@ fn markup(m: &str) -> gtk::Label {
     l
 }
 
+fn dim(text: &str) -> gtk::Label {
+    let l = label(text);
+    l.add_css_class("dim");
+    l
+}
+
 fn section_title(text: &str) -> gtk::Label {
     let l = label(text);
     l.add_css_class("section-title");
     l
 }
 
+fn headline(text: &str) -> gtk::Label {
+    let l = label(text);
+    l.add_css_class("headline");
+    l
+}
+
+fn card() -> gtk::Box {
+    let b = gtk::Box::new(gtk::Orientation::Vertical, 10);
+    b.add_css_class("card");
+    b
+}
+
 /// Vertical box inside a scrolled window: the standard page layout.
 pub fn scrolled_page() -> (gtk::ScrolledWindow, gtk::Box) {
-    let content = gtk::Box::new(gtk::Orientation::Vertical, 10);
+    let content = gtk::Box::new(gtk::Orientation::Vertical, 12);
     content.set_margin_top(MARGIN);
     content.set_margin_bottom(MARGIN);
     content.set_margin_start(MARGIN);
     content.set_margin_end(MARGIN);
+    // Explicit viewport: the implicit one scrolls to whatever gets focus
+    // (e.g. the table), so pages would open scrolled down.
+    let viewport = gtk::Viewport::builder()
+        .scroll_to_focus(false)
+        .child(&content)
+        .build();
     let scrolled = gtk::ScrolledWindow::builder()
         .hscrollbar_policy(gtk::PolicyType::Never)
         .vexpand(true)
-        .child(&content)
+        .child(&viewport)
         .build();
     (scrolled, content)
 }
@@ -74,86 +106,206 @@ fn item_row(item: &Item) -> gtk::Box {
     row
 }
 
-/// One check: header (glyph, title, summary) and, when there is something to
-/// show, an expander with items and limitation. Problems start expanded.
-fn report_row(r: &CheckReport) -> gtk::Widget {
+/// Histogram + table for timed events.
+fn timeline_view(rows: Vec<Row>, show_check: bool) -> gtk::Box {
+    let b = gtk::Box::new(gtk::Orientation::Vertical, 10);
+    let points: Vec<(SystemTime, Status)> = rows
+        .iter()
+        .map(|r| (r.event.time, r.event.status))
+        .collect();
+    if let Some(h) = charts::histogram(&points) {
+        b.append(&h);
+    }
+    b.append(&table::events_table(rows, show_check));
+    b
+}
+
+fn expander(title: &str, child: &impl IsA<gtk::Widget>, expanded: bool) -> gtk::Expander {
+    let l = label(title);
+    l.add_css_class("check-title");
+    gtk::Expander::builder()
+        .label_widget(&l)
+        .child(child)
+        .expanded(expanded)
+        .build()
+}
+
+/// One check as a card: header, gauges, timeline + table, details.
+fn report_card(r: &CheckReport) -> gtk::Box {
+    let c = card();
     let header = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     header.append(&style::glyph(r.status));
     let title = label(r.id.title());
     title.add_css_class("check-title");
-    title.set_width_chars(20);
     title.set_wrap(false);
     header.append(&title);
-    let summary = label(&r.summary);
+    let summary = dim(&r.summary);
     summary.set_hexpand(true);
     header.append(&summary);
+    c.append(&header);
 
-    if r.items.is_empty() && r.limitation.is_none() {
-        header.set_margin_start(22); // aligned with expander rows
-        return header.upcast();
-    }
-
-    let body = gtk::Box::new(gtk::Orientation::Vertical, 4);
-    body.set_margin_start(30);
-    body.set_margin_top(6);
-    body.set_margin_bottom(6);
     if let Some(l) = &r.limitation {
-        let note = label(&format!("Incomplete: {l}"));
-        note.add_css_class("dim");
-        body.append(&note);
+        c.append(&dim(&format!("Incomplete: {l}")));
     }
-    for item in &r.items {
-        body.append(&item_row(item));
+
+    for g in &r.gauges {
+        c.append(&charts::gauge(g));
     }
-    gtk::Expander::builder()
-        .label_widget(&header)
-        .child(&body)
-        .expanded(r.status >= Status::Warning)
-        .build()
-        .upcast()
+
+    let problem = r.status >= Status::Warning;
+    if !r.events.is_empty() {
+        let rows = r
+            .events
+            .iter()
+            .map(|e| Row {
+                check: None,
+                event: e.clone(),
+            })
+            .collect();
+        let title = format!("Timeline ({} events)", r.events.len());
+        c.append(&expander(&title, &timeline_view(rows, false), problem));
+    }
+
+    // With gauges, the bars already tell the story: list only problems.
+    let items: Vec<&Item> = if r.gauges.is_empty() {
+        r.items.iter().collect()
+    } else {
+        r.items.iter().filter(|i| i.status > Status::Ok).collect()
+    };
+    if !items.is_empty() {
+        let body = gtk::Box::new(gtk::Orientation::Vertical, 4);
+        body.set_margin_top(4);
+        for item in &items {
+            body.append(&item_row(item));
+        }
+        let title = if r.events.is_empty() {
+            format!("Details ({})", items.len())
+        } else {
+            format!("By source ({})", items.len())
+        };
+        c.append(&expander(&title, &body, problem && r.events.is_empty()));
+    }
+    c
 }
 
 pub fn fill_category(container: &gtk::Box, report: &Report, category: Category) {
     clear(container);
-    let title = label(category.title());
-    title.add_css_class("headline");
-    container.append(&title);
-    let list = gtk::Box::new(gtk::Orientation::Vertical, 10);
-    list.set_margin_top(6);
+    container.append(&headline(category.title()));
     for r in report.by_category(category) {
-        list.append(&report_row(r));
-        list.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
+        container.append(&report_card(r));
     }
-    container.append(&list);
 }
 
-pub fn fill_overview(container: &gtk::Box, report: Option<&Report>, last_run: Option<&str>) {
+/// Number of checks per status, worst first, for the donut.
+fn status_counts(report: &Report) -> Vec<(Status, usize)> {
+    let order = [
+        Status::Critical,
+        Status::Unknown,
+        Status::Warning,
+        Status::Info,
+        Status::Ok,
+        Status::Skipped,
+    ];
+    order
+        .iter()
+        .map(|s| (*s, report.reports.iter().filter(|r| r.status == *s).count()))
+        .collect()
+}
+
+fn category_tile(report: &Report, category: Category, navigate: &Navigate) -> gtk::Button {
+    let reports: Vec<&CheckReport> = report.by_category(category).collect();
+    let worst = reports.iter().map(|r| r.status).max().unwrap_or(Status::Ok);
+    let problems = reports
+        .iter()
+        .filter(|r| r.status >= Status::Warning)
+        .count();
+
+    let b = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    let top = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    top.append(&style::glyph(worst));
+    let name = label(category.title());
+    name.add_css_class("check-title");
+    top.append(&name);
+    b.append(&top);
+    let detail = match problems {
+        0 => format!("{} checks, all fine", reports.len()),
+        1 => "1 check needs attention".to_string(),
+        n => format!("{n} checks need attention"),
+    };
+    b.append(&dim(&detail));
+
+    let button = gtk::Button::builder()
+        .child(&b)
+        .tooltip_text(format!("Open {}", category.title()))
+        .build();
+    button.add_css_class("tile");
+    button.add_css_class(style::tile_class(worst));
+    let nav = navigate.clone();
+    button.connect_clicked(move |_| nav(category));
+    button
+}
+
+pub fn fill_overview(
+    container: &gtk::Box,
+    report: Option<&Report>,
+    last_run: Option<&str>,
+    navigate: &Navigate,
+) {
     clear(container);
     let Some(report) = report else {
+        let spinner = gtk::Spinner::new();
+        spinner.start();
+        spinner.set_size_request(32, 32);
+        container.append(&spinner);
         container.append(&label("Running the first check…"));
         return;
     };
     let overall = report.overall();
 
-    let top = gtk::Box::new(gtk::Orientation::Horizontal, 16);
-    let big = style::glyph(overall);
-    big.add_css_class("big-glyph");
-    top.append(&big);
-    let text = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    // Summary: donut, legend, headline
+    let summary = card();
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 24);
+    let counts = status_counts(report);
+    row.append(&charts::donut(counts.clone(), 150));
+    row.append(&charts::legend(&counts));
+    let text = gtk::Box::new(gtk::Orientation::Vertical, 6);
     text.set_valign(gtk::Align::Center);
-    let headline = label(style::headline(overall));
-    headline.add_css_class("headline");
-    text.append(&headline);
+    text.set_hexpand(true);
+    let h = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+    let g = style::glyph(overall);
+    g.add_css_class("headline");
+    h.append(&g);
+    h.append(&headline(style::headline(overall)));
+    text.append(&h);
     if let Some(t) = last_run {
-        let l = label(&format!("Last check: {t}"));
-        l.add_css_class("dim");
-        text.append(&l);
+        text.append(&dim(&format!("Last check at {t}")));
     }
-    top.append(&text);
-    container.append(&top);
+    if report.reports.iter().any(|r| r.limitation.is_some()) {
+        text.append(&dim("Some checks are incomplete without root privileges: \
+             run `sudo arch-health` in a terminal for a complete report."));
+    }
+    row.append(&text);
+    summary.append(&row);
+    container.append(&summary);
 
-    // Everything that needs action, across categories.
+    // Category tiles
+    container.append(&section_title("Categories"));
+    let tiles = gtk::FlowBox::builder()
+        .selection_mode(gtk::SelectionMode::None)
+        .column_spacing(10)
+        .row_spacing(10)
+        .min_children_per_line(2)
+        .max_children_per_line(3)
+        .homogeneous(true)
+        .build();
+    for c in Category::ALL {
+        tiles.insert(&category_tile(report, c, navigate), -1);
+    }
+    container.append(&tiles);
+
+    // Items that need action
     container.append(&section_title("Needs attention"));
+    let attention = card();
     let mut any = false;
     for r in &report.reports {
         let problems: Vec<&Item> = r
@@ -170,62 +322,53 @@ pub fn fill_overview(container: &gtk::Box, report: Option<&Report>, last_run: Op
                 glib::markup_escape_text(r.id.title()),
                 glib::markup_escape_text(&r.summary)
             )));
-            container.append(&row);
+            attention.append(&row);
         }
         for item in problems {
             any = true;
             let row = item_row(item);
-            let check = label(&format!("{} ·", r.id.title()));
-            check.add_css_class("dim");
+            let check = dim(&format!("{} ·", r.id.title()));
+            check.set_hexpand(false);
             row.insert_child_after(&check, row.first_child().as_ref());
-            container.append(&row);
+            attention.append(&row);
         }
     }
     if !any {
-        container.append(&label("Nothing needs attention."));
+        attention.append(&label("Nothing needs attention."));
     }
+    container.append(&attention);
 
-    container.append(&section_title("Categories"));
-    let grid = gtk::Grid::builder()
-        .column_spacing(12)
-        .row_spacing(6)
-        .build();
-    for (row, category) in Category::ALL.iter().enumerate() {
-        let reports: Vec<&CheckReport> = report.by_category(*category).collect();
-        let worst = reports.iter().map(|r| r.status).max().unwrap_or(Status::Ok);
-        let problems = reports
-            .iter()
-            .filter(|r| r.status >= Status::Warning)
-            .count();
-        grid.attach(&style::glyph(worst), 0, row as i32, 1, 1);
-        grid.attach(&label(category.title()), 1, row as i32, 1, 1);
-        let detail = match problems {
-            0 => format!("{} checks, all fine", reports.len()),
-            1 => "1 check needs attention".to_string(),
-            n => format!("{n} checks need attention"),
-        };
-        let d = label(&detail);
-        d.add_css_class("dim");
-        grid.attach(&d, 2, row as i32, 1, 1);
+    // Errors with their time, across checks
+    let rows: Vec<Row> = report
+        .reports
+        .iter()
+        .flat_map(|r| {
+            r.events
+                .iter()
+                .filter(|e| e.status >= Status::Warning)
+                .map(|e| Row {
+                    check: Some(r.id.title()),
+                    event: e.clone(),
+                })
+        })
+        .collect();
+    container.append(&section_title("Recent errors"));
+    let errors = card();
+    if rows.is_empty() {
+        errors.append(&label("No errors recorded."));
+    } else {
+        errors.append(&dim(
+            "Errors and crashes with their time. Hover a bar for details; \
+             click a column header to sort.",
+        ));
+        errors.append(&timeline_view(rows, true));
     }
-    container.append(&grid);
-
-    if report.reports.iter().any(|r| r.limitation.is_some()) {
-        let note = label(
-            "Some checks are incomplete without root privileges. \
-             Run `sudo arch-health` in a terminal for a complete report.",
-        );
-        note.add_css_class("dim");
-        note.set_margin_top(12);
-        container.append(&note);
-    }
+    container.append(&errors);
 }
 
 pub fn history_page() -> gtk::Widget {
     let (scrolled, content) = scrolled_page();
-    let title = label("History");
-    title.add_css_class("headline");
-    content.append(&title);
+    content.append(&headline("History"));
     content.append(&label(
         "Not available yet. How the status history is stored and shown is still \
          being designed (docs/adr/0010-history.md).",
@@ -236,9 +379,7 @@ pub fn history_page() -> gtk::Widget {
 /// Generated from the CLI definition, so it never drifts from `--help`.
 pub fn command_line_page() -> gtk::Widget {
     let (scrolled, content) = scrolled_page();
-    let title = label("Command line");
-    title.add_css_class("headline");
-    content.append(&title);
+    content.append(&headline("Command line"));
     content.append(&label(
         "The same checks are available in a terminal, also over SSH, with the \
          arch-health command.",

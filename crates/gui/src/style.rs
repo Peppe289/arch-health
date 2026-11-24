@@ -17,6 +17,14 @@ pub const CSS: &str = "
 .dim { opacity: 0.7; }
 .section-title { font-weight: bold; margin-top: 12px; }
 .check-title { font-weight: bold; }
+.tile { padding: 10px 14px; border-radius: 8px; border-left-width: 5px; border-left-style: solid; }
+.tile-ok { border-left-color: #27ae60; }
+.tile-info { border-left-color: #3daee9; }
+.tile-warning { border-left-color: #f67400; }
+.tile-critical { border-left-color: #da4453; }
+.tile-unknown { border-left-color: #9b59b6; }
+.tile-skipped { border-left-color: alpha(currentColor, 0.3); }
+.card { padding: 14px; border-radius: 8px; background-color: alpha(currentColor, 0.04); }
 ";
 
 pub fn install() {
@@ -77,6 +85,29 @@ pub fn set_glyph(label: &gtk::Label, s: Status) {
         label.remove_css_class(c);
     }
     label.add_css_class(class(s));
+}
+
+pub fn status_name(s: Status) -> &'static str {
+    match s {
+        Status::Ok => "OK",
+        Status::Skipped => "Skipped",
+        Status::Info => "Info",
+        Status::Warning => "Warning",
+        Status::Unknown => "Unknown",
+        Status::Critical => "Critical",
+    }
+}
+
+/// CSS class for the colored edge of a tile.
+pub fn tile_class(s: Status) -> &'static str {
+    match s {
+        Status::Ok => "tile-ok",
+        Status::Skipped => "tile-skipped",
+        Status::Info => "tile-info",
+        Status::Warning => "tile-warning",
+        Status::Unknown => "tile-unknown",
+        Status::Critical => "tile-critical",
+    }
 }
 
 /// Short sentence for the overall status.

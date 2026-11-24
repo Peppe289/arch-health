@@ -16,3 +16,4 @@ an earlier one.
 | [0008](0008-license.md) | License: GPL-3.0-or-later | Accepted |
 | [0009](0009-development-process.md) | Development process | Accepted |
 | [0010](0010-history.md) | Status history | Proposed |
+| [0011](0011-charts-and-tables.md) | Charts and tables in the GUI | Accepted |

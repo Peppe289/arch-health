@@ -38,6 +38,7 @@ pub struct App {
     tray: RefCell<Option<Handle<HealthTray>>>,
     hold: RefCell<Option<gio::ApplicationHoldGuard>>,
     worker_tx: async_channel::Sender<WorkerMsg>,
+    navigate: pages::Navigate,
 }
 
 impl App {
@@ -61,6 +62,9 @@ impl App {
             gtk_app.hold()
         });
 
+        let sidebar_ui = ui.sidebar.clone();
+        let navigate: pages::Navigate = Rc::new(move |c| window::select_category(&sidebar_ui, c));
+
         let app = Rc::new(Self {
             gtk_app: gtk_app.clone(),
             ui,
@@ -71,6 +75,7 @@ impl App {
             tray: RefCell::new(tray),
             hold: RefCell::new(hold),
             worker_tx,
+            navigate,
         });
 
         let weak = Rc::downgrade(&app);
@@ -109,13 +114,17 @@ impl App {
             None => glib::ControlFlow::Break,
         });
 
-        pages::fill_overview(&app.ui.overview, None, None);
+        pages::fill_overview(&app.ui.overview, None, None, &app.navigate);
         app.start_run();
         app
     }
 
     pub fn present(&self) {
         self.ui.window.present();
+    }
+
+    pub fn show_page(&self, name: &str) {
+        window::select_page(&self.ui.sidebar, name);
     }
 
     fn quit(&self) {
@@ -192,7 +201,7 @@ impl App {
             CHECK_INTERVAL_SECS / 3600
         ));
 
-        pages::fill_overview(&self.ui.overview, Some(&report), Some(&now));
+        pages::fill_overview(&self.ui.overview, Some(&report), Some(&now), &self.navigate);
         self.ui.set_overview_glyph(overall);
         for c in Category::ALL {
             if let Some(container) = self.ui.categories.get(&c) {

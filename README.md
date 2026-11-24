@@ -26,9 +26,14 @@ Exit status: `0` healthy · `1` warnings · `2` critical · `3` usage/startup er
 ```
 ./target/release/arch-health-gui               # window + tray icon
 ./target/release/arch-health-gui --background  # tray only (session autostart)
+./target/release/arch-health-gui --page logs    # open a page directly
 ```
 
-- Sidebar with an overview and one page per category; problems are expanded.
+- Overview: ring chart of the checks by status, clickable category tiles,
+  what needs attention, and a timeline + table of recent errors across checks.
+- One page per category; each check is a card. Disk usage as bars; journal
+  errors, coredumps and failed units as a histogram over time and a table
+  (time, level, source, message) that can be sorted and filtered.
 - Tray icon (StatusNotifierItem) colored by the overall status; left click opens
   the window, the menu offers *Run checks now* and *Quit*. Closing the window
   keeps the monitor running in the tray.
