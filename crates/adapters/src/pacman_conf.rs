@@ -7,7 +7,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use alpm::SigLevel;
-use anyhow::{Context, Result};
+use arch_health_core::{PortError, PortResult};
 
 #[derive(Debug, Clone)]
 pub struct Repo {
@@ -118,10 +118,15 @@ struct Parser {
 }
 
 impl Parser {
-    fn parse_file(&mut self, path: &Path, depth: u8) -> Result<()> {
-        anyhow::ensure!(depth < 10, "troppi Include annidati in {}", path.display());
+    fn parse_file(&mut self, path: &Path, depth: u8) -> PortResult<()> {
+        if depth >= 10 {
+            return Err(PortError::data(format!(
+                "too many nested Include in {}",
+                path.display()
+            )));
+        }
         let text = fs::read_to_string(path)
-            .with_context(|| format!("lettura di {}", path.display()))?;
+            .map_err(|e| PortError::unavailable(format!("reading {}: {e}", path.display())))?;
         for line in text.lines() {
             let line = line.split('#').next().unwrap_or("").trim();
             if line.is_empty() {
@@ -130,7 +135,10 @@ impl Parser {
             if let Some(name) = line.strip_prefix('[').and_then(|l| l.strip_suffix(']')) {
                 self.section = Some(name.to_string());
                 if name != "options" {
-                    self.repos.push(RawRepo { name: name.to_string(), ..Default::default() });
+                    self.repos.push(RawRepo {
+                        name: name.to_string(),
+                        ..Default::default()
+                    });
                 }
                 continue;
             }
@@ -163,12 +171,16 @@ impl Parser {
 }
 
 impl PacmanConf {
-    pub fn load_default() -> Result<Self> {
+    pub fn load_default() -> PortResult<Self> {
         Self::load(Path::new("/etc/pacman.conf"))
     }
 
-    pub fn load(path: &Path) -> Result<Self> {
-        let mut p = Parser { section: None, options: vec![], repos: vec![] };
+    pub fn load(path: &Path) -> PortResult<Self> {
+        let mut p = Parser {
+            section: None,
+            options: vec![],
+            repos: vec![],
+        };
         p.parse_file(path, 0)?;
 
         let mut conf = PacmanConf {
@@ -183,7 +195,10 @@ impl PacmanConf {
             repos: vec![],
         };
 
-        let machine = rustix::system::uname().machine().to_string_lossy().into_owned();
+        let machine = rustix::system::uname()
+            .machine()
+            .to_string_lossy()
+            .into_owned();
         for (key, value) in &p.options {
             match key.as_str() {
                 "RootDir" => conf.root_dir = value.into(),
@@ -198,7 +213,9 @@ impl PacmanConf {
                 }
                 "SigLevel" => conf.sig_level = apply_sig_level(conf.sig_level, value),
                 "ParallelDownloads" => conf.parallel_downloads = value.parse().unwrap_or(1),
-                "IgnorePkg" => conf.ignore_pkg.extend(value.split_whitespace().map(String::from)),
+                "IgnorePkg" => conf
+                    .ignore_pkg
+                    .extend(value.split_whitespace().map(String::from)),
                 _ => {}
             }
         }

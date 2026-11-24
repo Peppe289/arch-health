@@ -1,9 +1,16 @@
-[package]
-name = "arch-health"
+[workspace]
+resolver = "3"
+members = ["crates/core", "crates/adapters", "crates/cli"]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
+license = "GPL-3.0-or-later"
 
-[dependencies]
+[workspace.dependencies]
+arch-health-core = { path = "crates/core" }
+arch-health-adapters = { path = "crates/adapters" }
+
 alpm = "5"
 anyhow = "1.0.105"
 chrono = { version = "0.4.45", default-features = false, features = ["std", "clock"] }
@@ -12,5 +19,6 @@ roxmltree = "0.21.2"
 rustix = { version = "1", features = ["fs", "process", "system"] }
 serde = { version = "1.0.229", features = ["derive"] }
 systemd = { version = "0.11", default-features = false, features = ["journal"] }
+thiserror = "2.0.21"
 ureq = { version = "3", default-features = false, features = ["native-tls", "gzip", "json"] }
 zbus = "5"

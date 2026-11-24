@@ -1,0 +1,17 @@
+[package]
+name = "arch-health-adapters"
+description = "System adapters of arch-health: libalpm, D-Bus, sd-journal, procfs/sysfs, HTTP"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+arch-health-core.workspace = true
+alpm.workspace = true
+chrono.workspace = true
+roxmltree.workspace = true
+rustix.workspace = true
+serde.workspace = true
+systemd.workspace = true
+ureq.workspace = true
+zbus.workspace = true

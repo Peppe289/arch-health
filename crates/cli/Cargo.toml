@@ -1,0 +1,19 @@
+[package]
+name = "arch-health-cli"
+description = "Command line interface of arch-health"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "arch_health_cli"
+
+[[bin]]
+name = "arch-health"
+path = "src/main.rs"
+
+[dependencies]
+arch-health-core.workspace = true
+arch-health-adapters.workspace = true
+anyhow.workspace = true
+clap.workspace = true

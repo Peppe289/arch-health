@@ -1,0 +1,10 @@
+[package]
+name = "arch-health-core"
+description = "Domain model, checks and runner of arch-health (no system dependencies)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+chrono.workspace = true
+thiserror.workspace = true

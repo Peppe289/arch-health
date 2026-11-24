@@ -1,83 +1,116 @@
 # arch-health
 
-Stato di salute di un sistema Arch Linux. Usa solo le librerie e le API di
-sistema: libalpm, D-Bus, sysfs, procfs e syscall. Non lancia nessun comando esterno.
+Health report for an Arch Linux installation: is it up to date, consistent,
+not corrupted, without failing components?
+
+arch-health uses only libraries and system APIs (libalpm, D-Bus, sd-journal,
+procfs/sysfs, syscalls, HTTPS) and **never executes other programs**
+([ADR-0001](docs/adr/0001-no-process-execution.md)).
+
+## Usage
 
 ```
 cargo build --release
-./target/release/arch-health            # sync privato dei db + tutti i controlli
-./target/release/arch-health --no-sync  # usa i db di sistema (l'AUR viene comunque interrogato)
-./target/release/arch-health --offline  # nessun accesso alla rete: niente sync, AUR, CVE e news
-./target/release/arch-health -v         # mostra tutti i dettagli
+./target/release/arch-health                # private db refresh + all checks
+./target/release/arch-health --no-sync      # use the system databases as they are
+./target/release/arch-health --offline      # no network: no refresh, AUR, CVEs, news
+./target/release/arch-health --only kernel,disk-space
+./target/release/arch-health --list-checks
+sudo ./target/release/arch-health           # complete results for root-only data
 ```
 
-Exit code: `0` ok · `1` avvisi · `2` problemi critici.
+Exit status: `0` healthy · `1` warnings · `2` critical · `3` usage/startup error.
 
-## Controlli
+## Checks
 
-| Sezione   | Controllo            | Fonte |
-|-----------|----------------------|-------|
-| Pacchetti | Aggiornamenti        | libalpm, sync in `~/.cache/arch-health/db` (non tocca `/var/lib/pacman`) |
-|           | Orfani, esterni      | libalpm, db locale |
-|           | `.pacnew`            | libalpm (file di backup dei pacchetti) + filesystem |
-|           | Aggiornamenti AUR    | pacchetti esterni (libalpm) → AUR RPC v5 `info`, confronto con `alpm::vercmp`; segnala anche pacchetti obsoleti, orfani o assenti in AUR |
-| Sicurezza | Vulnerabilità        | pacchetti installati (libalpm) confrontati con il [security tracker](https://security.archlinux.org/issues/all.json), stessa logica di `arch-audit` |
-|           | News Arch            | feed RSS di archlinux.org, news uscite dopo l'ultimo `-Syu` (letto da `pacman.log`) |
-| Riavvio   | Kernel               | `uname()` vs `/usr/lib/modules` |
-|           | Librerie sostituite  | `/proc/*/maps` (tutti i processi solo da root) |
-| Servizi   | Unità fallite        | D-Bus `org.freedesktop.systemd1` (sistema + utente) |
-| Dischi    | Spazio / inode / ro  | `/proc/self/mounts` + `statvfs()` |
-|           | Errori btrfs         | `/sys/fs/btrfs/*/devinfo/*/error_stats` |
-|           | SMART / NVMe         | D-Bus `org.freedesktop.UDisks2` |
-| Journal   | Errori dall'avvio    | sd-journal, `PRIORITY<=3` del boot corrente, raggruppati per unità |
-|           | Coredump             | sd-journal, `MESSAGE_ID` di systemd-coredump, ultimi 7 giorni |
+| Key | Category | What | Source |
+|-----|----------|------|--------|
+| `repo-updates` | Packages | pending repository updates | libalpm, private db copy in `~/.cache/arch-health/db` |
+| `aur-updates` | Packages | AUR updates; out-of-date, orphaned, missing, stale `-debug` packages | libalpm + AUR RPC v5 |
+| `orphans` | Packages | packages no longer required | libalpm |
+| `foreign-packages` | Packages | packages not in the repositories | libalpm |
+| `pacnew` | Packages | unmerged `.pacnew` files | libalpm backup files |
+| `vulnerabilities` | Security | installed packages with known issues (same logic as `arch-audit`) | security.archlinux.org |
+| `arch-news` | Security | news published since the last `-Syu` | archlinux.org RSS + `pacman.log` |
+| `kernel` | Reboot | running kernel removed → reboot needed | `uname()`, `/usr/lib/modules` |
+| `stale-libraries` | Reboot | processes using replaced libraries (all processes as root) | `/proc/*/maps` |
+| `system-services`, `user-services` | Services | failed units, manager state | systemd D-Bus |
+| `disk-space` | Storage | space/inodes, read-only filesystems | `/proc/self/mounts`, `statvfs()` |
+| `btrfs-errors` | Storage | device error counters | `/sys/fs/btrfs` |
+| `drive-health` | Storage | SMART failure, bad sectors, NVMe critical warnings (no temperatures) | UDisks2 D-Bus |
+| `journal-errors` | Logs | errors of the current boot, grouped by source | sd-journal |
+| `coredumps` | Logs | crashes in the last 7 days | sd-journal |
 
-## Dipendenze
+## Architecture
 
-### Build (makedepends)
+Cargo workspace, hexagonal core ([ADR-0003](docs/adr/0003-hexagonal-core.md)):
 
-| Pacchetto | Perché |
-|-----------|--------|
-| `rust` (o `rustup`) | compilatore + cargo |
-| `pkgconf` | `alpm-sys` trova `libalpm` con pkg-config |
-| `pacman`  | header e `libalpm.pc` (già installato su Arch) |
-| `systemd-libs` | `libsystemd` per sd-journal (già installato su Arch) |
-| `openssl` | header e pkg-config per native-tls (già installato su Arch) |
+```
+crates/core      domain model, checks (pure rules), runner, ports (traits)
+                 no system dependencies: builds and tests anywhere
+crates/adapters  ports implemented with libalpm, D-Bus, sd-journal, procfs/sysfs, HTTP
+crates/cli       the `arch-health` command
+```
 
-### Esecuzione (depends)
+- Requirements: [docs/requirements.md](docs/requirements.md)
+- Decisions: [docs/adr/](docs/adr/README.md)
 
-| Pacchetto | Perché |
-|-----------|--------|
-| `pacman`  | `libalpm.so` (porta con sé curl, gpgme, libarchive, …) |
-| `systemd-libs` | `libsystemd.so` (sd-journal) |
-| `openssl` | TLS per le richieste HTTPS all'AUR (native-tls) |
-| `ca-certificates` | certificati CA di sistema usati per HTTPS |
-| `glibc`, `gcc-libs` | runtime Rust standard |
+## Dependencies
 
-### Servizi usati a runtime (opzionali: se mancano, il controllo dice "non eseguito")
+### Build
 
-| Pacchetto | Perché |
-|-----------|--------|
-| `systemd` + `dbus` | unità fallite (sempre presenti su Arch) |
-| `udisks2` | salute SMART/NVMe (attivato via D-Bus, non serve abilitarlo) |
+| Package | Why |
+|---------|-----|
+| `rust` (or `rustup`) | compiler and cargo |
+| `pkgconf` | `alpm-sys` finds libalpm through pkg-config |
+| `pacman` | libalpm headers and `libalpm.pc` |
+| `systemd-libs` | libsystemd for sd-journal |
+| `openssl` | native-tls |
 
-D-Bus è implementato in Rust puro (`zbus`), quindi **non** serve `libdbus`.
+### Runtime
 
-## Note
+| Package | Why |
+|---------|-----|
+| `pacman` | `libalpm.so` |
+| `systemd-libs` | `libsystemd.so` |
+| `openssl`, `ca-certificates` | HTTPS with the system CA store |
+| `glibc`, `gcc-libs` | Rust runtime |
 
-- Il journal di sistema è leggibile solo da root o dai gruppi `wheel`, `adm`
-  e `systemd-journal` (su Arch tramite ACL). Senza questi permessi viene letto
-  solo il journal dell'utente, e il riepilogo lo segnala.
-- Gli errori del journal con livello `err` sono solo informativi (su un desktop
-  sono spesso rumore). Con livello `crit`, `alert` o `emerg` diventano critici.
-- Gravità delle vulnerabilità: Critical/High con correzione disponibile →
-  critico; altre con correzione → avviso; senza correzione → informativo
-  (Critical → avviso). Molte voci senza correzione del tracker sono vecchie e
-  non aggiornate, per questo non fanno scattare allarmi.
-- Le richieste all'AUR inviano solo i nomi dei pacchetti esterni installati
-  (come fanno paru e yay), con User-Agent `arch-health/<versione>`.
-- La configurazione di `pacman.conf` viene letta da un parser interno
-  (`src/pacman_conf.rs`). Il crate `pacmanconf` invece esegue `pacman-conf`.
-- libalpm usa internamente gpgme per verificare le firme. Sui repo ufficiali i
-  database non sono firmati (`DatabaseOptional`), quindi durante il sync gpg in
-  pratica non viene avviato.
+### Services used at runtime (optional: a missing one makes its check report "could not run")
+
+| Package | Why |
+|---------|-----|
+| `systemd`, `dbus` | failed units |
+| `udisks2` | drive health (D-Bus activated) |
+
+D-Bus is spoken by `zbus` (pure Rust): no libdbus needed.
+
+## Development
+
+```
+cargo fmt --check
+cargo clippy --all-targets -- -D warnings
+cargo test
+```
+
+Commit subjects follow `type(component): title`
+([ADR-0009](docs/adr/0009-development-process.md)).
+
+## Notes
+
+- The system journal is readable by root and by the `wheel`, `adm` and
+  `systemd-journal` groups; otherwise only the user journal is read and the
+  report says so.
+- Journal messages at `err` level are informational (often noise on
+  desktops); `crit`, `alert` and `emerg` are critical.
+- Vulnerability severity: fixable critical/high → critical; other fixable →
+  warning; without a fix → informational (critical → warning). Many unfixed
+  tracker entries are stale, so they do not raise alarms.
+- AUR requests send only the names of the installed foreign packages, like
+  any AUR helper, with User-Agent `arch-health/<version>`.
+- libalpm uses gpgme internally for signature checks; official repository
+  databases are not signed, so gpg is not started during the refresh.
+
+## License
+
+GPL-3.0-or-later ([ADR-0008](docs/adr/0008-license.md)).
