@@ -15,6 +15,8 @@ pub const COMMAND_LINE: &str = "command-line";
 pub struct Ui {
     pub window: gtk::ApplicationWindow,
     pub run_button: gtk::Button,
+    /// Shown when root would complete some results (ADR-0005).
+    pub unlock_button: gtk::Button,
     pub spinner: gtk::Spinner,
     pub status_bar: gtk::Label,
     pub overview: gtk::Box,
@@ -61,6 +63,15 @@ pub fn build(app: &gtk::Application) -> Ui {
     header.pack_start(&run_button);
     let spinner = gtk::Spinner::new();
     header.pack_start(&spinner);
+    let unlock_button = gtk::Button::builder()
+        .label("Unlock…")
+        .tooltip_text(
+            "Complete the results that need administrator privileges \
+             (asks for the administrator password)",
+        )
+        .visible(false)
+        .build();
+    header.pack_end(&unlock_button);
     window.set_titlebar(Some(&header));
 
     let stack = gtk::Stack::builder()
@@ -152,6 +163,7 @@ pub fn build(app: &gtk::Application) -> Ui {
     Ui {
         window,
         run_button,
+        unlock_button,
         spinner,
         status_bar,
         overview: overview.expect("pages() starts with the overview"),

@@ -266,8 +266,10 @@ fn overview_summary(report: &Report, last_run: Option<&str>) -> gtk::Box {
         text.append(&dim(&format!("Last check at {t}")));
     }
     if report.root_would_help {
-        text.append(&dim("Some checks are incomplete without root privileges: \
-             run `sudo arch-health` in a terminal for a complete report."));
+        text.append(&dim(
+            "Some results are incomplete without administrator privileges: click \
+             Unlock… to complete them, or run `sudo arch-health` in a terminal.",
+        ));
     }
     row.append(&text);
 

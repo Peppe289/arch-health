@@ -4,7 +4,10 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use arch_health_adapters::{Options, system_ports};
+use std::sync::Arc;
+
+use arch_health_adapters::helper::{HelperClient, HelperError};
+use arch_health_adapters::{Options, system_ports, system_ports_with_helper};
 use arch_health_core::checks::{Context, all_checks};
 use arch_health_core::{Category, Config, Event, Report, Status, run};
 use gtk::prelude::*;
@@ -26,6 +29,8 @@ const NOTIFY_MAX_LINES: usize = 3;
 enum WorkerMsg {
     Progress(Event),
     Done(Report),
+    /// Answer to an Unlock request (polkit).
+    Unlocked(Result<bool, HelperError>),
 }
 
 pub struct App {
@@ -33,6 +38,8 @@ pub struct App {
     ui: Ui,
     total_checks: usize,
     running: Cell<bool>,
+    /// Privileged reads go through the helper (after Unlock).
+    unlocked: Cell<bool>,
     finished: Cell<usize>,
     last_overall: Cell<Option<Status>>,
     tray: RefCell<Option<Handle<HealthTray>>>,
@@ -70,6 +77,7 @@ impl App {
             ui,
             total_checks: all_checks().len(),
             running: Cell::new(false),
+            unlocked: Cell::new(false),
             finished: Cell::new(0),
             last_overall: Cell::new(None),
             tray: RefCell::new(tray),
@@ -82,6 +90,13 @@ impl App {
         app.ui.run_button.connect_clicked(move |_| {
             if let Some(a) = weak.upgrade() {
                 a.start_run();
+            }
+        });
+
+        let weak = Rc::downgrade(&app);
+        app.ui.unlock_button.connect_clicked(move |_| {
+            if let Some(a) = weak.upgrade() {
+                a.unlock();
             }
         });
 
@@ -152,11 +167,16 @@ impl App {
         self.update_tray(|t| t.running = true);
 
         let tx = self.worker_tx.clone();
+        let unlocked = self.unlocked.get();
         std::thread::spawn(move || {
             // Fresh ports each run: the package snapshot is cached per instance.
-            let ports = system_ports(Options {
+            let options = Options {
                 sync_databases: true,
-            });
+            };
+            let ports = match unlocked.then(HelperClient::connect) {
+                Some(Ok(client)) => system_ports_with_helper(options, Arc::new(client)),
+                _ => system_ports(options),
+            };
             let config = Config::default();
             let checks = all_checks();
             let ctx = Context {
@@ -182,13 +202,61 @@ impl App {
                 ));
             }
             WorkerMsg::Done(report) => self.on_report(report),
+            WorkerMsg::Unlocked(result) => self.on_unlocked(result),
         }
+    }
+
+    /// Asks polkit (through the helper) for authorization; the desktop shows
+    /// its password dialog. Blocking, so it runs on a worker thread.
+    fn unlock(&self) {
+        self.ui.unlock_button.set_sensitive(false);
+        self.ui.status_bar.set_text("Waiting for authorization…");
+        let tx = self.worker_tx.clone();
+        std::thread::spawn(move || {
+            let result = HelperClient::connect().and_then(|c| c.authorize(true));
+            let _ = tx.send_blocking(WorkerMsg::Unlocked(result));
+        });
+    }
+
+    fn on_unlocked(&self, result: Result<bool, HelperError>) {
+        self.ui.unlock_button.set_sensitive(true);
+        let (message, detail) = match result {
+            Ok(true) => {
+                self.unlocked.set(true);
+                self.start_run();
+                return;
+            }
+            Ok(false) | Err(HelperError::Denied) => (
+                "Authorization not granted",
+                "The results that need administrator privileges stay incomplete.".to_string(),
+            ),
+            Err(HelperError::NotInstalled) => (
+                "The privileged helper is not installed",
+                "Install arch-health-helper and its D-Bus and polkit files \
+                 (see “Privileged helper” in the README), then try again."
+                    .to_string(),
+            ),
+            Err(HelperError::Other(e)) => ("Could not unlock", e),
+        };
+        self.ui.status_bar.set_text(message);
+        gtk::AlertDialog::builder()
+            .message(message)
+            .detail(detail)
+            .modal(true)
+            .build()
+            .show(Some(&self.ui.window));
     }
 
     fn on_report(&self, report: Report) {
         self.running.set(false);
         self.ui.spinner.stop();
         self.ui.run_button.set_sensitive(true);
+        // Still incomplete while unlocked: polkit's authorization expired
+        // (or the helper went away). Offer Unlock again.
+        if report.root_would_help {
+            self.unlocked.set(false);
+        }
+        self.ui.unlock_button.set_visible(report.root_would_help);
 
         let now = glib::DateTime::now_local()
             .and_then(|d| d.format("%H:%M"))
