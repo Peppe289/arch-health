@@ -3,9 +3,11 @@ use std::time::{Duration, SystemTime};
 
 use super::{Check, Context, Privilege};
 use crate::error::PortResult;
-use crate::model::{CheckId, CheckReport, Item, Status, plural};
+use crate::model::{CheckId, CheckReport, Item, Status, TimedEvent, plural};
 
+/// Grouped item messages are short; event messages keep more context.
 const MESSAGE_MAX: usize = 100;
+const EVENT_MESSAGE_MAX: usize = 400;
 
 fn journal_limitation(ctx: &Context<'_>) -> Option<String> {
     (!ctx.ports.journal.system_journal_readable()).then(|| {
@@ -14,12 +16,21 @@ fn journal_limitation(ctx: &Context<'_>) -> Option<String> {
     })
 }
 
-fn truncate(s: &str) -> String {
+fn truncate(s: &str, max: usize) -> String {
     let s = s.lines().next().unwrap_or("").trim();
-    if s.chars().count() > MESSAGE_MAX {
-        format!("{}…", s.chars().take(MESSAGE_MAX).collect::<String>())
+    if s.chars().count() > max {
+        format!("{}…", s.chars().take(max).collect::<String>())
     } else {
         s.to_string()
+    }
+}
+
+/// emerg/alert/crit → critical; err → warning (for display of single events).
+fn priority_status(priority: u8) -> Status {
+    if priority <= 2 {
+        Status::Critical
+    } else {
+        Status::Warning
     }
 }
 
@@ -51,7 +62,7 @@ impl Check for JournalErrors {
             });
             g.count += 1;
             g.worst = g.worst.min(e.priority);
-            g.last = truncate(&e.message);
+            g.last = truncate(&e.message, MESSAGE_MAX);
         }
         let mut groups: Vec<_> = groups.into_iter().collect();
         groups.sort_by(|a, b| a.1.worst.cmp(&b.1.worst).then(b.1.count.cmp(&a.1.count)));
@@ -78,7 +89,17 @@ impl Check for JournalErrors {
                 plural(items.len(), "source")
             )
         };
+        let events = entries
+            .iter()
+            .map(|e| TimedEvent {
+                time: e.time,
+                status: priority_status(e.priority),
+                source: e.source.clone(),
+                message: truncate(&e.message, EVENT_MESSAGE_MAX),
+            })
+            .collect();
         Ok(CheckReport::from_items(self.id(), items, summary)
+            .with_events(events)
             .with_limitation(journal_limitation(ctx)))
     }
 }
@@ -134,7 +155,24 @@ impl Check for Coredumps {
             (n, 0) => format!("{} in {days} days, none since boot", plural(n, "crash")),
             (n, b) => format!("{} in {days} days, {b} since boot", plural(n, "crash")),
         };
+        let events = dumps
+            .iter()
+            .map(|d| TimedEvent {
+                time: d.time,
+                status: if d.current_boot {
+                    Status::Warning
+                } else {
+                    Status::Info
+                },
+                source: d.executable.clone(),
+                message: match &d.signal {
+                    Some(sig) => format!("crashed ({sig})"),
+                    None => "crashed".into(),
+                },
+            })
+            .collect();
         Ok(CheckReport::from_items(self.id(), items, summary)
+            .with_events(events)
             .with_limitation(journal_limitation(ctx)))
     }
 }
@@ -160,6 +198,7 @@ mod tests {
 
     fn entry(source: &str, priority: u8) -> LogEntry {
         LogEntry {
+            time: SystemTime::now(),
             source: source.into(),
             priority,
             message: format!("{source} failed"),
@@ -186,6 +225,15 @@ mod tests {
         assert_eq!(r.items[1].detail, "×2: bluetooth failed");
         assert_eq!(r.items[1].status, Status::Info);
         assert!(r.limitation.is_none());
+        // One event per entry, with per-event severity.
+        assert_eq!(r.events.len(), 3);
+        assert_eq!(
+            r.events
+                .iter()
+                .filter(|e| e.status == Status::Critical)
+                .count(),
+            1
+        );
     }
 
     #[test]
@@ -218,5 +266,8 @@ mod tests {
         assert_eq!(r.summary, "2 crashes in 7 days, 1 since boot");
         assert!(r.items[0].detail.starts_with("×2, last just now, SIGSEGV"));
         assert!(r.limitation.is_some());
+        assert_eq!(r.events.len(), 2);
+        assert_eq!(r.events[0].message, "crashed (SIGSEGV)");
+        assert_eq!(r.events[0].status, Status::Warning);
     }
 }

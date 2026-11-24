@@ -18,6 +18,6 @@ pub(crate) mod fake;
 
 pub use config::Config;
 pub use error::{ErrorKind, PortError, PortResult};
-pub use model::{Category, CheckId, CheckReport, Item, Report, Status};
+pub use model::{Category, CheckId, CheckReport, Gauge, Item, Report, Status, TimedEvent};
 pub use ports::Ports;
 pub use runner::{Event, run};

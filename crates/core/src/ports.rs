@@ -109,6 +109,8 @@ pub enum ManagerScope {
 pub struct FailedUnit {
     pub name: String,
     pub description: String,
+    /// When the unit entered the failed state, if known.
+    pub since: Option<SystemTime>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -126,6 +128,7 @@ pub trait ServiceManager: Send + Sync {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LogEntry {
+    pub time: SystemTime,
     /// Unit, syslog identifier or command that logged the message.
     pub source: String,
     /// syslog priority, 0 (emerg) .. 7 (debug).

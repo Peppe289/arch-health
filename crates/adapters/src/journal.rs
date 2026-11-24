@@ -61,6 +61,7 @@ impl JournalReader for SdJournal {
         let mut out = Vec::new();
         while let Some(r) = j.next_entry().map_err(&err)? {
             out.push(LogEntry {
+                time: j.timestamp().unwrap_or(UNIX_EPOCH),
                 source: source(&r),
                 priority: r.get("PRIORITY").and_then(|p| p.parse().ok()).unwrap_or(3),
                 message: r.get("MESSAGE").cloned().unwrap_or_default(),

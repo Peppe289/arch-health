@@ -4,7 +4,7 @@
 
 use super::{Check, Context};
 use crate::error::PortResult;
-use crate::model::{CheckId, CheckReport, Item, Status, plural};
+use crate::model::{CheckId, CheckReport, Gauge, Item, Status, plural};
 use crate::ports::DriveKind;
 
 fn pct(used: u64, available: u64) -> f64 {
@@ -44,36 +44,42 @@ impl Check for DiskSpace {
                 Status::Ok
             }
         };
-        let items: Vec<Item> = ctx
-            .ports
-            .storage
-            .filesystems()?
-            .into_iter()
-            .map(|fs| {
-                let used = pct(fs.bytes_used, fs.bytes_available);
-                let mut status = level(used);
-                let mut detail = format!(
-                    "{}, {}: {used:.0}% used, {} free",
-                    fs.fstype,
-                    fs.device,
-                    human(fs.bytes_available)
-                );
-                if let (Some(u), Some(a)) = (fs.inodes_used, fs.inodes_available) {
-                    let ip = pct(u, a);
-                    if level(ip) > Status::Ok {
-                        status = status.max(level(ip));
-                        detail.push_str(&format!(", inodes {ip:.0}% used"));
-                    }
+        let mut items = Vec::new();
+        let mut gauges = Vec::new();
+        for fs in ctx.ports.storage.filesystems()? {
+            let used = pct(fs.bytes_used, fs.bytes_available);
+            let mut status = level(used);
+            let mut detail = format!(
+                "{}, {}: {used:.0}% used, {} free",
+                fs.fstype,
+                fs.device,
+                human(fs.bytes_available)
+            );
+            if let (Some(u), Some(a)) = (fs.inodes_used, fs.inodes_available) {
+                let ip = pct(u, a);
+                if level(ip) > Status::Ok {
+                    status = status.max(level(ip));
+                    detail.push_str(&format!(", inodes {ip:.0}% used"));
                 }
-                // A filesystem that turned read-only usually hit an error.
-                // vfat (ESP) is often mounted read-only on purpose.
-                if fs.read_only && fs.fstype != "vfat" {
-                    status = status.max(Status::Warning);
-                    detail.push_str(", mounted read-only");
-                }
-                Item::new(status, fs.mount_point, detail)
-            })
-            .collect();
+            }
+            // A filesystem that turned read-only usually hit an error.
+            // vfat (ESP) is often mounted read-only on purpose.
+            if fs.read_only && fs.fstype != "vfat" {
+                status = status.max(Status::Warning);
+                detail.push_str(", mounted read-only");
+            }
+            gauges.push(Gauge {
+                label: fs.mount_point.clone(),
+                fraction: used / 100.0,
+                text: format!(
+                    "{used:.0}% used · {} free of {}",
+                    human(fs.bytes_available),
+                    human(fs.bytes_used + fs.bytes_available)
+                ),
+                status: level(used),
+            });
+            items.push(Item::new(status, fs.mount_point, detail));
+        }
         let bad = items.iter().filter(|i| i.status > Status::Ok).count();
         let summary = if bad == 0 {
             format!("{}, enough free space", plural(items.len(), "filesystem"))
@@ -83,7 +89,7 @@ impl Check for DiskSpace {
                 plural(bad, "filesystem")
             )
         };
-        Ok(CheckReport::from_items(self.id(), items, summary))
+        Ok(CheckReport::from_items(self.id(), items, summary).with_gauges(gauges))
     }
 }
 
@@ -236,6 +242,11 @@ mod tests {
             ]
         );
         assert_eq!(r.status, Status::Critical);
+        assert_eq!(r.gauges.len(), 4);
+        assert!((r.gauges[1].fraction - 0.9).abs() < 1e-9);
+        assert_eq!(r.gauges[1].status, Status::Warning);
+        // Read-only is not a space problem: the gauge stays ok.
+        assert_eq!(r.gauges[3].status, Status::Ok);
     }
 
     #[test]

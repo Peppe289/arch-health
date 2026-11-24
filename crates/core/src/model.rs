@@ -1,6 +1,7 @@
 //! Domain model: what a check produces.
 
 use std::fmt;
+use std::time::SystemTime;
 
 /// Outcome of a check or of a single item. Ordered by severity, so
 /// `max()` gives the worst one.
@@ -135,7 +136,32 @@ impl Item {
     }
 }
 
+/// Something that happened at a known time (a logged error, a crash, a unit
+/// failure). Frontends show these as a timeline and a table.
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TimedEvent {
+    pub time: SystemTime,
+    pub status: Status,
+    /// Unit, program or executable the event belongs to.
+    pub source: String,
+    pub message: String,
+}
+
+/// A level between 0 and 1, e.g. used disk space. Frontends show it as a bar.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Gauge {
+    pub label: String,
+    /// 0.0 ..= 1.0
+    pub fraction: f64,
+    /// Short text shown next to the bar, e.g. "26% used, 1.3 TiB free".
+    pub text: String,
+    pub status: Status,
+}
+
+/// Upper bound of events kept per report, to bound memory and UI size.
+pub const MAX_EVENTS: usize = 1000;
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct CheckReport {
     pub id: CheckId,
     pub status: Status,
@@ -143,6 +169,9 @@ pub struct CheckReport {
     pub items: Vec<Item>,
     /// Set when the result is incomplete, e.g. because root is needed.
     pub limitation: Option<String>,
+    /// Newest first, at most [`MAX_EVENTS`].
+    pub events: Vec<TimedEvent>,
+    pub gauges: Vec<Gauge>,
 }
 
 impl CheckReport {
@@ -153,11 +182,26 @@ impl CheckReport {
             summary: summary.into(),
             items: Vec::new(),
             limitation: None,
+            events: Vec::new(),
+            gauges: Vec::new(),
         }
     }
 
     pub fn with_items(mut self, items: Vec<Item>) -> Self {
         self.items = items;
+        self
+    }
+
+    /// Keeps the newest [`MAX_EVENTS`] events, newest first.
+    pub fn with_events(mut self, mut events: Vec<TimedEvent>) -> Self {
+        events.sort_by_key(|e| std::cmp::Reverse(e.time));
+        events.truncate(MAX_EVENTS);
+        self.events = events;
+        self
+    }
+
+    pub fn with_gauges(mut self, gauges: Vec<Gauge>) -> Self {
+        self.gauges = gauges;
         self
     }
 
@@ -224,6 +268,25 @@ mod tests {
         assert_eq!(plural(1, "crash"), "1 crash");
         assert_eq!(plural(2, "crash"), "2 crashes");
         assert_eq!(plural(0, "package"), "0 packages");
+    }
+
+    #[test]
+    fn events_are_sorted_newest_first_and_capped() {
+        let t0 = SystemTime::UNIX_EPOCH;
+        let ev = |s: u64| TimedEvent {
+            time: t0 + std::time::Duration::from_secs(s),
+            status: Status::Info,
+            source: "x".into(),
+            message: String::new(),
+        };
+        let events: Vec<_> = (0..(MAX_EVENTS as u64 + 5)).map(ev).collect();
+        let r = CheckReport::new(CheckId::Kernel, Status::Ok, "").with_events(events);
+        assert_eq!(r.events.len(), MAX_EVENTS);
+        assert!(r.events[0].time > r.events[1].time);
+        assert_eq!(
+            r.events[0].time,
+            t0 + std::time::Duration::from_secs(MAX_EVENTS as u64 + 4)
+        );
     }
 
     #[test]

@@ -1,6 +1,6 @@
 use super::{Check, Context};
 use crate::error::PortResult;
-use crate::model::{CheckId, CheckReport, Item, Status, plural};
+use crate::model::{CheckId, CheckReport, Item, Status, TimedEvent, plural};
 use crate::ports::ManagerScope;
 
 /// Failed units of the system or user service manager.
@@ -48,7 +48,21 @@ impl Check for Services {
         } else {
             format!("{}, {} failed", st.state, plural(items.len(), "unit"))
         };
-        Ok(CheckReport::new(self.id(), status, summary).with_items(items))
+        let events = st
+            .failed
+            .iter()
+            .filter_map(|u| {
+                Some(TimedEvent {
+                    time: u.since?,
+                    status: Status::Critical,
+                    source: u.name.clone(),
+                    message: format!("failed: {}", u.description),
+                })
+            })
+            .collect();
+        Ok(CheckReport::new(self.id(), status, summary)
+            .with_items(items)
+            .with_events(events))
     }
 }
 
@@ -65,6 +79,7 @@ mod tests {
         fake.manager.failed = vec![FailedUnit {
             name: "foo.service".into(),
             description: "Foo".into(),
+            since: Some(std::time::SystemTime::now()),
         }];
         let (ports, config) = (fake.ports(), Default::default());
         let r = Services::System
@@ -75,6 +90,7 @@ mod tests {
             .unwrap();
         assert_eq!(r.status, Status::Critical);
         assert_eq!(r.summary, "degraded, 1 unit failed");
+        assert_eq!(r.events[0].source, "foo.service");
     }
 
     #[test]

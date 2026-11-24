@@ -1,6 +1,7 @@
 //! D-Bus adapters: systemd (failed units) and UDisks2 (drive health).
 
 use std::collections::HashMap;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use arch_health_core::ports::{
     Drive, DriveKind, FailedUnit, ManagerScope, ManagerState, ServiceManager,
@@ -53,12 +54,27 @@ impl ServiceManager for SystemdManager {
             .into_iter()
             .filter(|u| u.3 == "failed")
             .map(|u| FailedUnit {
+                since: state_change_time(&conn, &u.6),
                 name: u.0,
                 description: u.1,
             })
             .collect();
         Ok(ManagerState { state, failed })
     }
+}
+
+/// `Unit.StateChangeTimestamp` (µs since the epoch): for a failed unit, when
+/// it failed. Missing or zero means unknown.
+fn state_change_time(conn: &Connection, unit: &OwnedObjectPath) -> Option<SystemTime> {
+    let proxy = Proxy::new(
+        conn,
+        "org.freedesktop.systemd1",
+        unit.as_str(),
+        "org.freedesktop.systemd1.Unit",
+    )
+    .ok()?;
+    let usec: u64 = proxy.get_property("StateChangeTimestamp").ok()?;
+    (usec > 0).then(|| UNIX_EPOCH + Duration::from_micros(usec))
 }
 
 // ------------------------------------------------------------------ UDisks2
